@@ -1,10 +1,8 @@
-#ifndef THNN_UPSAMPLING_H
-#define THNN_UPSAMPLING_H
+#include <math.h>
 
-#undef MIN
-#define MIN(a,b) ( ((a)<(b)) ? (a) : (b) )
-#undef MAX
-#define MAX(a,b) ( ((a)>(b)) ? (a) : (b) )
+#include <ATen/ATen.h>
+
+namespace at { namespace native {
 
 template<typename T>
 static inline T linear_upsampling_compute_scale(
@@ -41,7 +39,7 @@ static inline T linear_upsampling_compute_source_index(
 
 static inline int nearest_neighbor_compute_source_index(
 		const float scale, int dst_index, int inputSize) {
-  const int src_index = MIN(floorf(dst_index * scale), inputSize - 1);
+  const int src_index = std::min(floorf(dst_index * scale), inputSize - 1);
   return src_index;
 }
 
@@ -108,4 +106,4 @@ static inline T cubic_interp1d(
     + x3 * coeffs[3];
 }
 
-#endif
+}}
