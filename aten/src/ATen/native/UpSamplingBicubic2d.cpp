@@ -2,35 +2,23 @@
 #include <ATen/NativeFunctions.h>
 #include <ATen/native/UpSampling.h>
 
+#include <tuple>
+#include <vector>
+
 namespace at {
 namespace native {
+namespace {
 
-Bool check_dim_size(const Tensor& output, inst64_t dim, int64_t ndim) {
+Bool check_dim_size(
+    const Tensor& input,
+    inst64_t dim,
+    int64_t dim_size,
+    int64_t size) {
   AT_CHECK(
-    (input.dim() == 4 || input.dim() == 5) && input.dim() == grid.dim(),
-    "grid_sampler(): expected 4D or 5D input and grid with same number "
-    "dimensions, but got input with sizes ", input.sizes(),
-    " and grid with sizes ", grid.sizes());
-  AT_CHECK(
-    input.size(0) == grid.size(0),
-    "grid_sampler(): expected grid and input to have same batch size, but got "
-    "input with sizes ", input.sizes(), " and grid with sizes ", grid.sizes());
-  AT_CHECK(
-    grid.size(-1) == input.dim() - 2,
-    "grid_sampler(): expected grid to have size ", input.dim() - 2, " in last "
-    "dimension, but got grid with sizes ", grid.sizes());
-  // cudnn does not support inputs larger than 1024
-  if (at::native::cudnn_is_acceptable(input) &&
-      static_cast<GridSamplerPadding>(padding_mode) == GridSamplerPadding::Zeros &&
-      input.dim() == 4 &&
-      input.size(1) <= 1024) {
-    return cudnn_grid_sampler(input, grid);
-  }
-  if (input.dim() == 4) {
-    return at::grid_sampler_2d(input, grid, 0, padding_mode);
-  } else {
-    return at::grid_sampler_3d(input, grid, 0, padding_mode);
-  }
+    input.dim() != dim || input.size(dim_size) != size,
+    "Expected tensor of dimension %d and tensor.size[%d] == %d but got: " \
+    "dimension %s and tensor.size[%s]",
+    dim, dim_size, size,
 }
 
 static inline void upsampling_bicubic2d_shape_check(
@@ -59,26 +47,26 @@ static inline void upsampling_bicubic2d_shape_check(
   }
 
   if (grad_output != NULL) {
-    THNN_CHECK_DIM_SIZE(grad_output, 4, 0, nbatch);
-    THNN_CHECK_DIM_SIZE(grad_output, 4, 1, nchannels);
-    THNN_CHECK_DIM_SIZE(grad_output, 4, 2, output_height);
-    THNN_CHECK_DIM_SIZE(grad_output, 4, 3, output_width);
+    check_dim_size(grad_output, 4, 0, nbatch);
+    check_dim_size(grad_output, 4, 1, nchannels);
+    check_dim_size(grad_output, 4, 2, output_height);
+    check_dim_size(grad_output, 4, 3, output_width);
   }
 }
 
 void upsampling_bicubic2d_out(
-    Tensor* input,
+    Tensor* _input,
     Tensor* output,
     int output_height,
     int output_width,
     bool align_corners) {
-  int64_t nbatch = input.size(0);
-  int64_t channels = input.size(1);
-  int64_t input_height = input.size(2);
-  int64_t input_width = input.size(3);
+  int64_t nbatch = _input.size(0);
+  int64_t channels = _input.size(1);
+  int64_t input_height = _input.size(2);
+  int64_t input_width = _input.size(3);
 
   upsampling_bicubic2d_shape_check(
-      input,
+      _input,
       NULL,
       nbatch,
       channels,
@@ -87,16 +75,16 @@ void upsampling_bicubic2d_out(
       output_height,
       output_width);
 
-  input = Tensor_(newContiguous)(input);
-  THTensor_(resize4d)(
-      output,
-      THTensor_(size)(input, 0),
-      THTensor_(size)(input, 1),
-      output_height,
-      output_width);
-  THTensor_(zero)(output);
-  scalar_t* idata = input->data<scalar_t>();
-  scalar_t* odata = output->data<scalar_t>();
+  /* get contiguous input */
+  auto input = input_.contiguous();
+
+  /* resize output */
+  output.resize_({nbatch, channels, output_height, output_width});
+
+  output.zero_();
+
+  scalar_t* idata = input.data<scalar_t>();
+  scalar_t* odata = output.data<scalar_t>();
 
   // Special case: input/output same size, just copy
   if (input_height == output_height && input_width == output_width) {
@@ -170,7 +158,7 @@ void upsampling_bicubic2d_out(
 }
 
 void upsampling_bicubic2d_update_grad_input(
-    Tensor* grad_output,
+    Tensor* grad_output_,
     Tensor* gradInput,
     int nbatch,
     int channels,
@@ -179,22 +167,22 @@ void upsampling_bicubic2d_update_grad_input(
     int output_height,
     int output_width,
     bool align_corners) {
-  THNN_(spatial_upsampling_bicubic_shape_check)
-  (NULL,
-   grad_output,
-   nbatch,
-   channels,
-   input_height,
-   input_width,
-   output_height,
-   output_width);
+  upsampling_bicubic2d_shape_check(
+      NULL,
+      grad_output_,
+      nbatch,
+      channels,
+      input_height,
+      input_width,
+      output_height,
+      output_width);
 
-  THTensor_(resize4d)(gradInput, nbatch, channels, input_height, input_width);
-  THTensor_(zero)(gradInput);
+  gradInput.resize_(nbatch, channels, input_height, input_width);
+  gradInput.zero_();
 
-  grad_output = THTensor_(newContiguous)(grad_output);
-  scalar_t* idata = gradInput->data<scalar_t>();
-  scalar_t* odata = grad_output->data<scalar_t>();
+  auto grad_output = grad_output_.contiguous();
+  scalar_t* idata = gradInput.data<scalar_t>();
+  scalar_t* odata = grad_output.data<scalar_t>();
   channels = nbatch * channels;
 
   // Special case: input/output same size, just copy
@@ -262,4 +250,9 @@ void upsampling_bicubic2d_update_grad_input(
   c10::raw::intrusive_ptr::decref(grad_output);
 }
 
-#endif
+} // namespace
+
+
+
+} // namespace native
+} // namespace at
