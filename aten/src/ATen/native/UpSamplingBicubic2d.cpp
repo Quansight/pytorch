@@ -2,72 +2,24 @@
 #include <ATen/NativeFunctions.h>
 #include <ATen/native/UpSampling.h>
 
-#include <tuple>
-#include <vector>
-
 namespace at {
 namespace native {
-namespace {
 
-Bool check_dim_size(
-    const Tensor& input,
-    inst64_t dim,
-    int64_t dim_size,
-    int64_t size) {
-  AT_CHECK(
-    input.dim() != dim || input.size(dim_size) != size,
-    "Expected tensor of dimension %d and tensor.size[%d] == %d but got: " \
-    "dimension %s and tensor.size[%s]",
-    dim, dim_size, size,
-}
-
-static inline void upsampling_bicubic2d_shape_check(
-    Tensor* input,
-    Tensor* grad_output,
-    int nbatch,
-    int nchannels,
-    int input_height,
-    int input_width,
-    int output_height,
-    int output_width) {
-  AT_CHECK(
-      input_height > 0 && input_width > 0 && output_height > 0 &&
-          output_width > 0,
-      "input and output sizes should be greater than 0,"
-      " but got input (H: %d, W: %d) output (H: %d, W: %d)",
-      input_height,
-      input_width,
-      output_height,
-      output_width);
-
-  if (input != NULL) {
-    AT_CHECK(
-        !input.numel() == 0 && input.dim() == 4,
-        "non-empty 4D input tensor expected but got: %s");
-  }
-
-  if (grad_output != NULL) {
-    check_dim_size(grad_output, 4, 0, nbatch);
-    check_dim_size(grad_output, 4, 1, nchannels);
-    check_dim_size(grad_output, 4, 2, output_height);
-    check_dim_size(grad_output, 4, 3, output_width);
-  }
-}
-
-void upsampling_bicubic2d_out(
-    Tensor* _input,
-    Tensor* output,
+template <typename scalar_t>
+static void upsampling_bicubic2d_out_frame_template(
+    const Tensor& input_,
+    Tensor& output,
     int output_height,
     int output_width,
     bool align_corners) {
-  int64_t nbatch = _input.size(0);
-  int64_t channels = _input.size(1);
-  int64_t input_height = _input.size(2);
-  int64_t input_width = _input.size(3);
+  int64_t nbatch = input_.size(0);
+  int64_t channels = input_.size(1);
+  int64_t input_height = input_.size(2);
+  int64_t input_width = input_.size(3);
 
-  upsampling_bicubic2d_shape_check(
-      _input,
-      NULL,
+  upsampling_bicubic2d_shape_check<scalar_t>(
+      input_,
+      0,
       nbatch,
       channels,
       input_height,
@@ -99,14 +51,16 @@ void upsampling_bicubic2d_out(
         }
       }
     }
-    c10::raw::intrusive_ptr::decref(input);
+
+    // it seems it is not necessary anymore
+    // c10::raw::intrusive_ptr::decref(input);
     return;
   }
 
   // Bicubic interpolation
-  const accreal height_scale = linear_upsampling_compute_scale<accreal>(
+  const scalar_t height_scale = linear_upsampling_compute_scale<scalar_t>(
       input_height, output_height, align_corners);
-  const accreal width_scale = linear_upsampling_compute_scale<accreal>(
+  const scalar_t width_scale = linear_upsampling_compute_scale<scalar_t>(
       input_width, output_width, align_corners);
 
   for (int output_y = 0; output_y < output_height; output_y++) {
@@ -154,12 +108,14 @@ void upsampling_bicubic2d_out(
     }
   }
 
-  c10::raw::intrusive_ptr::decref(input);
+  // it seems it is not necessary anymore
+  // c10::raw::intrusive_ptr::decref(input);
 }
 
-void upsampling_bicubic2d_update_grad_input(
-    Tensor* grad_output_,
-    Tensor* gradInput,
+template <typename scalar_t>
+static void upsampling_bicubic2d_update_grad_input_template(
+    const Tensor& grad_output_,
+    Tensor& grad_input,
     int nbatch,
     int channels,
     int input_height,
@@ -167,9 +123,9 @@ void upsampling_bicubic2d_update_grad_input(
     int output_height,
     int output_width,
     bool align_corners) {
-  upsampling_bicubic2d_shape_check(
-      NULL,
+  upsampling_bicubic2d_shape_check<scalar_t>(
       grad_output_,
+      1,
       nbatch,
       channels,
       input_height,
@@ -177,11 +133,11 @@ void upsampling_bicubic2d_update_grad_input(
       output_height,
       output_width);
 
-  gradInput.resize_(nbatch, channels, input_height, input_width);
-  gradInput.zero_();
+  grad_input.resize_({nbatch, channels, input_height, input_width});
+  grad_input.zero_();
 
   auto grad_output = grad_output_.contiguous();
-  scalar_t* idata = gradInput.data<scalar_t>();
+  scalar_t* idata = grad_input.data<scalar_t>();
   scalar_t* odata = grad_output.data<scalar_t>();
   channels = nbatch * channels;
 
@@ -198,13 +154,14 @@ void upsampling_bicubic2d_update_grad_input(
         }
       }
     }
-    c10::raw::intrusive_ptr::decref(grad_output);
+    // it seems it is not necessary anymore
+    // c10::raw::intrusive_ptr::decref(grad_output);
     return;
   }
 
-  const accreal height_scale = linear_upsampling_compute_scale<accreal>(
+  const scalar_t height_scale = linear_upsampling_compute_scale<scalar_t>(
       input_height, output_height, align_corners);
-  const accreal width_scale = linear_upsampling_compute_scale<accreal>(
+  const scalar_t width_scale = linear_upsampling_compute_scale<scalar_t>(
       input_width, output_width, align_corners);
 
   for (int output_y = 0; output_y < output_height; output_y++) {
@@ -247,12 +204,56 @@ void upsampling_bicubic2d_update_grad_input(
     }
   }
 
-  c10::raw::intrusive_ptr::decref(grad_output);
+  // it seems it is not necessary anymore
+  // c10::raw::intrusive_ptr::decref(grad_output);
 }
 
-} // namespace
+template <typename scalar_t>
+static void check_dim_size(
+    scalar_t* input,
+    int64_t dim,
+    int64_t dim_size,
+    int64_t size) {
+  AT_CHECK(
+      input.dim() != dim || input.size(dim_size) != size,
+      "Expected tensor of dimension %d and tensor.size[%d] == %d but got: "
+      "dimension %s and tensor.size[%s]",
+      dim,
+      dim_size,
+      size);
+}
 
+template <typename scalar_t>
+static void upsampling_bicubic2d_shape_check(
+    scalar_t* data,
+    int type_check,
+    int nbatch,
+    int nchannels,
+    int input_height,
+    int input_width,
+    int output_height,
+    int output_width) {
+  AT_CHECK(
+      input_height > 0 && input_width > 0 && output_height > 0 &&
+          output_width > 0,
+      "input and output sizes should be greater than 0,"
+      " but got input (H: %d, W: %d) output (H: %d, W: %d)",
+      input_height,
+      input_width,
+      output_height,
+      output_width);
 
+  if (type_check == 0) {
+    AT_CHECK(
+        !data.numel() == 0 && data.dim() == 4,
+        "non-empty 4D input tensor expected but got: %s");
+  } else if (type_check == 1) {
+    check_dim_size<scalar_t>(data, 4, 0, nbatch);
+    check_dim_size<scalar_t>(data, 4, 1, nchannels);
+    check_dim_size<scalar_t>(data, 4, 2, output_height);
+    check_dim_size<scalar_t>(data, 4, 3, output_width);
+  }
+}
 
 } // namespace native
 } // namespace at
