@@ -17,7 +17,7 @@ static void upsampling_bicubic2d_out_frame_template(
   int64_t input_height = input_.size(2);
   int64_t input_width = input_.size(3);
 
-  upsampling_bicubic2d_shape_check<scalar_t>(
+  upsampling_2d_shape_check<scalar_t>(
       input_,
       0,
       nbatch,
@@ -27,12 +27,9 @@ static void upsampling_bicubic2d_out_frame_template(
       output_height,
       output_width);
 
-  /* get contiguous input */
   auto input = input_.contiguous();
 
-  /* resize output */
   output.resize_({nbatch, channels, output_height, output_width});
-
   output.zero_();
 
   scalar_t* idata = input.data<scalar_t>();
@@ -44,6 +41,7 @@ static void upsampling_bicubic2d_out_frame_template(
       for (int output_x = 0; output_x < output_width; output_x++) {
         const scalar_t* in = &idata[output_y * input_width + output_x];
         scalar_t* out = &odata[output_y * output_width + output_x];
+
         for (int c = 0; c < channels; ++c) {
           out[0] = in[0];
           in += input_width * input_height;
@@ -52,7 +50,6 @@ static void upsampling_bicubic2d_out_frame_template(
       }
     }
 
-    // it seems it is not necessary anymore
     // c10::raw::intrusive_ptr::decref(input);
     return;
   }
@@ -108,7 +105,6 @@ static void upsampling_bicubic2d_out_frame_template(
     }
   }
 
-  // it seems it is not necessary anymore
   // c10::raw::intrusive_ptr::decref(input);
 }
 
@@ -123,7 +119,7 @@ static void upsampling_bicubic2d_update_grad_input_template(
     int output_height,
     int output_width,
     bool align_corners) {
-  upsampling_bicubic2d_shape_check<scalar_t>(
+  upsampling_2d_shape_check<scalar_t>(
       grad_output_,
       1,
       nbatch,
@@ -133,13 +129,15 @@ static void upsampling_bicubic2d_update_grad_input_template(
       output_height,
       output_width);
 
+  auto grad_output = grad_output_.contiguous();
+
   grad_input.resize_({nbatch, channels, input_height, input_width});
   grad_input.zero_();
 
-  auto grad_output = grad_output_.contiguous();
   scalar_t* idata = grad_input.data<scalar_t>();
   scalar_t* odata = grad_output.data<scalar_t>();
-  channels = nbatch * channels;
+
+  channels = channels * nbatch;
 
   // Special case: input/output same size, just copy
   if (input_height == output_height && input_width == output_width) {
@@ -154,7 +152,6 @@ static void upsampling_bicubic2d_update_grad_input_template(
         }
       }
     }
-    // it seems it is not necessary anymore
     // c10::raw::intrusive_ptr::decref(grad_output);
     return;
   }
@@ -204,55 +201,7 @@ static void upsampling_bicubic2d_update_grad_input_template(
     }
   }
 
-  // it seems it is not necessary anymore
   // c10::raw::intrusive_ptr::decref(grad_output);
-}
-
-template <typename scalar_t>
-static void check_dim_size(
-    scalar_t* input,
-    int64_t dim,
-    int64_t dim_size,
-    int64_t size) {
-  AT_CHECK(
-      input.dim() != dim || input.size(dim_size) != size,
-      "Expected tensor of dimension %d and tensor.size[%d] == %d but got: "
-      "dimension %s and tensor.size[%s]",
-      dim,
-      dim_size,
-      size);
-}
-
-template <typename scalar_t>
-static void upsampling_bicubic2d_shape_check(
-    scalar_t* data,
-    int type_check,
-    int nbatch,
-    int nchannels,
-    int input_height,
-    int input_width,
-    int output_height,
-    int output_width) {
-  AT_CHECK(
-      input_height > 0 && input_width > 0 && output_height > 0 &&
-          output_width > 0,
-      "input and output sizes should be greater than 0,"
-      " but got input (H: %d, W: %d) output (H: %d, W: %d)",
-      input_height,
-      input_width,
-      output_height,
-      output_width);
-
-  if (type_check == 0) {
-    AT_CHECK(
-        !data.numel() == 0 && data.dim() == 4,
-        "non-empty 4D input tensor expected but got: %s");
-  } else if (type_check == 1) {
-    check_dim_size<scalar_t>(data, 4, 0, nbatch);
-    check_dim_size<scalar_t>(data, 4, 1, nchannels);
-    check_dim_size<scalar_t>(data, 4, 2, output_height);
-    check_dim_size<scalar_t>(data, 4, 3, output_width);
-  }
 }
 
 } // namespace native

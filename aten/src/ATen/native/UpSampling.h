@@ -5,6 +5,118 @@
 namespace at {
 namespace native {
 
+template <typename scalar_t>
+static inline void check_dim_size(
+    scalar_t* input,
+    int64_t dim,
+    int64_t dim_size,
+    int64_t size) {
+  /* Check dimension size of a tensor */
+  AT_CHECK(
+      input.dim() != dim || input.size(dim_size) != size,
+      "Expected tensor of dimension %d and tensor.size[%d] == %d but got: "
+      "dimension %s and tensor.size[%s]",
+      dim,
+      dim_size,
+      size);
+}
+
+template <typename scalar_t>
+static inline void upsampling_1d_shape_check(
+  scalar_t* data,
+  int type_check,
+  int nbatch,
+  int nchannels,
+  int input_width,
+  int output_width
+) {
+  AT_CHECK(
+      inputWidth > 0 && outputWidth > 0,
+      "input and output sizes should be greater than 0,"
+      " but got input (W: %d) output (W: %d)",
+      input_width,
+      output_width);
+
+  if (type_check == 0) {
+    AT_CHECK(
+        !data.numel() == 0 && data.dim() == 3,
+        "non-empty 3D input tensor expected but got: %s");
+  } else if (type_check == 1) {
+    check_dim_size<scalar_t>(data, 3, 0, nbatch);
+    check_dim_size<scalar_t>(data, 3, 1, nchannels);
+    check_dim_size<scalar_t>(data, 4, 3, output_width);
+  }
+}
+
+template <typename scalar_t>
+static inline void upsampling_2d_shape_check(
+    scalar_t* data,
+    int type_check,
+    int nbatch,
+    int nchannels,
+    int input_height,
+    int input_width,
+    int output_height,
+    int output_width) {
+  AT_CHECK(
+      input_height > 0 && input_width > 0 && output_height > 0 &&
+          output_width > 0,
+      "input and output sizes should be greater than 0,"
+      " but got input (H: %d, W: %d) output (H: %d, W: %d)",
+      input_height,
+      input_width,
+      output_height,
+      output_width);
+
+  if (type_check == 0) {
+    AT_CHECK(
+        !data.numel() == 0 && data.dim() == 4,
+        "non-empty 4D input tensor expected but got: %s");
+  } else if (type_check == 1) {
+    check_dim_size<scalar_t>(data, 4, 0, nbatch);
+    check_dim_size<scalar_t>(data, 4, 1, nchannels);
+    check_dim_size<scalar_t>(data, 4, 2, output_height);
+    check_dim_size<scalar_t>(data, 4, 3, output_width);
+  }
+}
+
+template <typename scalar_t>
+static inline void upsampling_3d_shape_check(
+  scalar_t* data,
+    int type_check,
+    int nbatch,
+    int nchannels,
+    int input_depth,
+    int input_height,
+    int input_width,
+    int output_depth,
+    int output_height,
+    int output_width) {
+  AT_CHECK(
+      input_depth > 0 && input_height > 0 && input_width > 0
+       && output_depth > 0 && output_height > 0 && output_width > 0,
+      "input and output sizes should be greater than 0,"
+      " but got input (D: %d, H: %d, W: %d) output (D: %d, H: %d, W: %d)",
+      input_depth,
+      input_height,
+      input_width,
+      output_depth,
+      output_height,
+      output_width);
+
+  if (type_check == 0) {
+    AT_CHECK(
+        data.dim() == 5,
+        "5D input tensor expected but got: %sD", data.dim());
+  } else if (type_check == 1) {
+    check_dim_size<scalar_t>(data, 5, 0, nbatch);
+    check_dim_size<scalar_t>(data, 5, 1, nchannels);
+    check_dim_size<scalar_t>(data, 5, 2, output_depth);
+    check_dim_size<scalar_t>(data, 5, 3, output_height);
+    check_dim_size<scalar_t>(data, 5, 4, output_width);
+  }
+}
+
 template <typename T>
 static inline T linear_upsampling_compute_scale(
     int inputSize,
@@ -46,7 +158,8 @@ static inline int nearest_neighbor_compute_source_index(
     const float scale,
     int dst_index,
     int inputSize) {
-  const int src_index = std::min(static_cast<int>(floorf(dst_index * scale)), inputSize - 1);
+  const int src_index =
+      std::min(static_cast<int>(floorf(dst_index * scale)), inputSize - 1);
   return src_index;
 }
 
