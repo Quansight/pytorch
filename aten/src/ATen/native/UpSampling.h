@@ -23,15 +23,14 @@ static inline void check_dim_size(
 
 template <typename scalar_t>
 static inline void upsampling_1d_shape_check(
-  scalar_t* data,
-  int type_check,
-  int nbatch,
-  int nchannels,
-  int input_width,
-  int output_width
-) {
+    scalar_t* data,
+    int type_check,
+    int nbatch,
+    int nchannels,
+    int input_width,
+    int output_width) {
   AT_CHECK(
-      inputWidth > 0 && outputWidth > 0,
+      input_width > 0 && output_width > 0,
       "input and output sizes should be greater than 0,"
       " but got input (W: %d) output (W: %d)",
       input_width,
@@ -82,7 +81,7 @@ static inline void upsampling_2d_shape_check(
 
 template <typename scalar_t>
 static inline void upsampling_3d_shape_check(
-  scalar_t* data,
+    scalar_t* data,
     int type_check,
     int nbatch,
     int nchannels,
@@ -93,8 +92,8 @@ static inline void upsampling_3d_shape_check(
     int output_height,
     int output_width) {
   AT_CHECK(
-      input_depth > 0 && input_height > 0 && input_width > 0
-       && output_depth > 0 && output_height > 0 && output_width > 0,
+      input_depth > 0 && input_height > 0 && input_width > 0 &&
+          output_depth > 0 && output_height > 0 && output_width > 0,
       "input and output sizes should be greater than 0,"
       " but got input (D: %d, H: %d, W: %d) output (D: %d, H: %d, W: %d)",
       input_depth,
@@ -106,8 +105,7 @@ static inline void upsampling_3d_shape_check(
 
   if (type_check == 0) {
     AT_CHECK(
-        data.dim() == 5,
-        "5D input tensor expected but got: %sD", data.dim());
+        data.dim() == 5, "5D input tensor expected but got: %sD", data.dim());
   } else if (type_check == 1) {
     check_dim_size<scalar_t>(data, 5, 0, nbatch);
     check_dim_size<scalar_t>(data, 5, 1, nchannels);
@@ -117,55 +115,55 @@ static inline void upsampling_3d_shape_check(
   }
 }
 
-template <typename T>
-static inline T linear_upsampling_compute_scale(
-    int inputSize,
-    int outputSize,
+template <typename scalar_t>
+static inline scalar_t linear_upsampling_compute_scale(
+    int input_size,
+    int output_size,
     bool align_corners) {
   /* We view each pixel as an area, idx + 0.5 as its center index.
    * Here is an example formula in 1D case.
    * if align_corners: center of two corner pixel areas are preserved,
    *     (0.5, 0.5) -> (0.5, 0.5),
-   *     (inputSize - 0.5, 0.5) -> (outputSize - 0.5)
-   *     scale = (inputSize - 0.5 - 0.5) / (outputSize - 0.5 - 0.5)
+   *     (input_size - 0.5, 0.5) -> (output_size - 0.5)
+   *     scale = (input_size - 0.5 - 0.5) / (output_size - 0.5 - 0.5)
    *     src_index + 0.5 - 0.5 = scale * (dst_index + 0.5 - 0.5)
    * if not align_corners: the whole range is scaled accordingly
-   *     scale = inputSize / outputSize
+   *     scale = input_size / output_size
    *     src_idx + 0.5 = scale * (dst_index + 0.5)
    */
-  if (outputSize > 1) {
-    return align_corners ? (T)(inputSize - 1) / (outputSize - 1)
-                         : (T)inputSize / outputSize;
+  if (output_size > 1) {
+    return align_corners ? (scalar_t)(input_size - 1) / (output_size - 1)
+                         : (scalar_t)input_size / output_size;
   } else {
-    return T(0);
+    return scalar_t(0);
   }
 }
 
-template <typename T>
-static inline T linear_upsampling_compute_source_index(
-    T scale,
+template <typename scalar_t>
+static inline scalar_t linear_upsampling_compute_source_index(
+    scalar_t scale,
     int dst_index,
     bool align_corners) {
   if (align_corners) {
     return scale * dst_index;
   } else {
-    T src_idx = scale * (dst_index + 0.5) - 0.5;
-    return src_idx < 0 ? T(0) : src_idx;
+    scalar_t src_idx = scale * (dst_index + 0.5) - 0.5;
+    return src_idx < 0 ? scalar_t(0) : src_idx;
   }
 }
 
 static inline int nearest_neighbor_compute_source_index(
     const float scale,
     int dst_index,
-    int inputSize) {
+    int input_size) {
   const int src_index =
-      std::min(static_cast<int>(floorf(dst_index * scale)), inputSize - 1);
+      std::min(static_cast<int>(floorf(dst_index * scale)), input_size - 1);
   return src_index;
 }
 
-template <typename T>
-static T upsampling_get_value_bounded(
-    T* data,
+template <typename scalar_t>
+static scalar_t upsampling_get_value_bounded(
+    scalar_t* data,
     int width,
     int height,
     int x,
@@ -175,14 +173,14 @@ static T upsampling_get_value_bounded(
   return data[access_y * width + access_x];
 }
 
-template <typename T>
+template <typename scalar_t>
 static void upsampling_increment_value_bounded(
-    T* data,
+    scalar_t* data,
     int width,
     int height,
     int x,
     int y,
-    T value) {
+    scalar_t value) {
   int access_x = std::max(std::min(x, width - 1), 0);
   int access_y = std::max(std::min(y, height - 1), 0);
   data[access_y * width + access_x] += value;
@@ -190,34 +188,41 @@ static void upsampling_increment_value_bounded(
 
 // Based on
 // https://en.wikipedia.org/wiki/Bicubic_interpolation#Bicubic_convolution_algorithm
-template <typename T>
-static inline T cubic_convolution1(T x, T A) {
+template <typename scalar_t>
+static inline scalar_t cubic_convolution1(scalar_t x, scalar_t A) {
   return ((A + 2) * x - (A + 3)) * x * x + 1;
 }
 
-template <typename T>
-static inline T cubic_convolution2(T x, T A) {
+template <typename scalar_t>
+static inline scalar_t cubic_convolution2(scalar_t x, scalar_t A) {
   return ((A * x - 5 * A) * x + 8 * A) * x - 4 * A;
 }
 
-template <typename T>
-static inline void get_cubic_upsampling_coefficients(T coeffs[4], T t) {
-  T A = -0.75;
+template <typename scalar_t>
+static inline void get_cubic_upsampling_coefficients(
+    scalar_t coeffs[4],
+    scalar_t t) {
+  scalar_t A = -0.75;
 
-  T x1 = t;
-  coeffs[0] = cubic_convolution2<T>(x1 + 1.0, A);
-  coeffs[1] = cubic_convolution1<T>(x1, A);
+  scalar_t x1 = t;
+  coeffs[0] = cubic_convolution2<scalar_t>(x1 + 1.0, A);
+  coeffs[1] = cubic_convolution1<scalar_t>(x1, A);
 
   // opposite coefficients
-  T x2 = 1.0 - t;
-  coeffs[2] = cubic_convolution1<T>(x2, A);
-  coeffs[3] = cubic_convolution2<T>(x2 + 1.0, A);
+  scalar_t x2 = 1.0 - t;
+  coeffs[2] = cubic_convolution1<scalar_t>(x2, A);
+  coeffs[3] = cubic_convolution2<scalar_t>(x2 + 1.0, A);
 }
 
-template <typename T>
-static inline T cubic_interp1d(T x0, T x1, T x2, T x3, T t) {
-  T coeffs[4];
-  get_cubic_upsampling_coefficients<T>(coeffs, t);
+template <typename scalar_t>
+static inline scalar_t cubic_interp1d(
+    scalar_t x0,
+    scalar_t x1,
+    scalar_t x2,
+    scalar_t x3,
+    scalar_t t) {
+  scalar_t coeffs[4];
+  get_cubic_upsampling_coefficients<scalar_t>(coeffs, t);
 
   return x0 * coeffs[0] + x1 * coeffs[1] + x2 * coeffs[2] + x3 * coeffs[3];
 }
