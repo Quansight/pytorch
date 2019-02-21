@@ -7,7 +7,7 @@ namespace native {
 
 template <typename scalar_t>
 static inline void check_dim_size(
-    scalar_t* input,
+    scalar_t& input,
     int64_t dim,
     int64_t dim_size,
     int64_t size) {
@@ -23,12 +23,12 @@ static inline void check_dim_size(
 
 template <typename scalar_t>
 static inline void upsampling_1d_shape_check(
-    scalar_t* data,
-    int type_check,
-    int nbatch,
-    int nchannels,
-    int input_width,
-    int output_width) {
+    scalar_t& data,
+    int64_t type_check,
+    int64_t nbatch,
+    int64_t nchannels,
+    int64_t input_width,
+    int64_t output_width) {
   AT_CHECK(
       input_width > 0 && output_width > 0,
       "input and output sizes should be greater than 0,"
@@ -49,14 +49,14 @@ static inline void upsampling_1d_shape_check(
 
 template <typename scalar_t>
 static inline void upsampling_2d_shape_check(
-    scalar_t* data,
-    int type_check,
-    int nbatch,
-    int nchannels,
-    int input_height,
-    int input_width,
-    int output_height,
-    int output_width) {
+    scalar_t& data,
+    int64_t type_check,
+    int64_t nbatch,
+    int64_t nchannels,
+    int64_t input_height,
+    int64_t input_width,
+    int64_t output_height,
+    int64_t output_width) {
   AT_CHECK(
       input_height > 0 && input_width > 0 && output_height > 0 &&
           output_width > 0,
@@ -81,16 +81,16 @@ static inline void upsampling_2d_shape_check(
 
 template <typename scalar_t>
 static inline void upsampling_3d_shape_check(
-    scalar_t* data,
-    int type_check,
-    int nbatch,
-    int nchannels,
-    int input_depth,
-    int input_height,
-    int input_width,
-    int output_depth,
-    int output_height,
-    int output_width) {
+    scalar_t& data,
+    int64_t type_check,
+    int64_t nbatch,
+    int64_t nchannels,
+    int64_t input_depth,
+    int64_t input_height,
+    int64_t input_width,
+    int64_t output_depth,
+    int64_t output_height,
+    int64_t output_width) {
   AT_CHECK(
       input_depth > 0 && input_height > 0 && input_width > 0 &&
           output_depth > 0 && output_height > 0 && output_width > 0,
@@ -117,8 +117,8 @@ static inline void upsampling_3d_shape_check(
 
 template <typename scalar_t>
 static inline scalar_t linear_upsampling_compute_scale(
-    int input_size,
-    int output_size,
+    int64_t input_size,
+    int64_t output_size,
     bool align_corners) {
   /* We view each pixel as an area, idx + 0.5 as its center index.
    * Here is an example formula in 1D case.
@@ -142,7 +142,7 @@ static inline scalar_t linear_upsampling_compute_scale(
 template <typename scalar_t>
 static inline scalar_t linear_upsampling_compute_source_index(
     scalar_t scale,
-    int dst_index,
+    int64_t dst_index,
     bool align_corners) {
   if (align_corners) {
     return scale * dst_index;
@@ -152,37 +152,37 @@ static inline scalar_t linear_upsampling_compute_source_index(
   }
 }
 
-static inline int nearest_neighbor_compute_source_index(
+static inline int64_t nearest_neighbor_compute_source_index(
     const float scale,
-    int dst_index,
-    int input_size) {
-  const int src_index =
+    int64_t dst_index,
+    int64_t input_size) {
+  const int64_t src_index =
       std::min(static_cast<int>(floorf(dst_index * scale)), input_size - 1);
   return src_index;
 }
 
 template <typename scalar_t>
 static scalar_t upsampling_get_value_bounded(
-    scalar_t* data,
-    int width,
-    int height,
-    int x,
-    int y) {
-  int access_x = std::max(std::min(x, width - 1), 0);
-  int access_y = std::max(std::min(y, height - 1), 0);
+    scalar_t& data,
+    int64_t width,
+    int64_t height,
+    int64_t x,
+    int64_t y) {
+  int64_t access_x = std::max(std::min(x, width - 1), 0);
+  int64_t access_y = std::max(std::min(y, height - 1), 0);
   return data[access_y * width + access_x];
 }
 
 template <typename scalar_t>
 static void upsampling_increment_value_bounded(
     scalar_t* data,
-    int width,
-    int height,
-    int x,
-    int y,
+    int64_t width,
+    int64_t height,
+    int64_t x,
+    int64_t y,
     scalar_t value) {
-  int access_x = std::max(std::min(x, width - 1), 0);
-  int access_y = std::max(std::min(y, height - 1), 0);
+  int64_t access_x = std::max(std::min(x, width - 1), 0);
+  int64_t access_y = std::max(std::min(y, height - 1), 0);
   data[access_y * width + access_x] += value;
 }
 

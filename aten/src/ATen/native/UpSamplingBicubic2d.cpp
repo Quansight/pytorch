@@ -9,8 +9,8 @@ template <typename scalar_t>
 static void upsampling_bicubic2d_out_frame_template(
     const Tensor& input_,
     Tensor& output,
-    int output_height,
-    int output_width,
+    int64_t output_height,
+    int64_t output_width,
     bool align_corners) {
   int64_t nbatch = input_.size(0);
   int64_t channels = input_.size(1);
@@ -19,7 +19,7 @@ static void upsampling_bicubic2d_out_frame_template(
 
   upsampling_2d_shape_check<scalar_t>(
       input_,
-      0,
+      static_cast<int64_t>(0),
       nbatch,
       channels,
       input_height,
@@ -37,48 +37,46 @@ static void upsampling_bicubic2d_out_frame_template(
 
   // Special case: input/output same size, just copy
   if (input_height == output_height && input_width == output_width) {
-    for (int output_y = 0; output_y < output_height; output_y++) {
-      for (int output_x = 0; output_x < output_width; output_x++) {
+    for (int64_t output_y = 0; output_y < output_height; output_y++) {
+      for (int64_t output_x = 0; output_x < output_width; output_x++) {
         const scalar_t* in = &idata[output_y * input_width + output_x];
         scalar_t* out = &odata[output_y * output_width + output_x];
 
-        for (int c = 0; c < channels; ++c) {
+        for (int64_t c = 0; c < channels; ++c) {
           out[0] = in[0];
           in += input_width * input_height;
           out += output_width * output_height;
         }
       }
     }
-
-    // c10::raw::intrusive_ptr::decref(input);
     return;
   }
 
-  // Bicubic interpolation
+  // Bicubic int64_terpolation
   const scalar_t height_scale = linear_upsampling_compute_scale<scalar_t>(
       input_height, output_height, align_corners);
   const scalar_t width_scale = linear_upsampling_compute_scale<scalar_t>(
       input_width, output_width, align_corners);
 
-  for (int output_y = 0; output_y < output_height; output_y++) {
-    for (int output_x = 0; output_x < output_width; output_x++) {
+  for (int64_t output_y = 0; output_y < output_height; output_y++) {
+    for (int64_t output_x = 0; output_x < output_width; output_x++) {
       scalar_t* in = idata;
       scalar_t* out = odata;
 
       const scalar_t real_x = width_scale * output_x;
-      int input_x = real_x;
+      int64_t input_x = real_x;
       const scalar_t t_x = real_x - input_x;
 
       const scalar_t real_y = height_scale * output_y;
-      int input_y = real_y;
+      int64_t input_y = real_y;
       const scalar_t t_y = real_y - input_y;
 
-      for (int c = 0; c < channels * nbatch; c++) {
+      for (int64_t c = 0; c < channels * nbatch; c++) {
         scalar_t coefficients[4];
 
         // Interpolate 4 times in the x direction
-        for (int i = 0; i < 4; i++) {
-          coefficients[i] = cubic_interp1d<scalar_t>(
+        for (int64_t i = 0; i < 4; i++) {
+          coefficients[i] = cubic_int64_terp1d<scalar_t>(
               upsampling_get_value_bounded<scalar_t>(
                   in, input_width, input_height, input_x - 1, input_y - 1 + i),
               upsampling_get_value_bounded<scalar_t>(
@@ -90,8 +88,8 @@ static void upsampling_bicubic2d_out_frame_template(
               t_x);
         }
 
-        // Interpolate in the y direction using x interpolations
-        out[output_y * output_width + output_x] = cubic_interp1d<scalar_t>(
+        // Interpolate in the y direction using x int64_terpolations
+        out[output_y * output_width + output_x] = cubic_int64_terp1d<scalar_t>(
             coefficients[0],
             coefficients[1],
             coefficients[2],
@@ -104,24 +102,22 @@ static void upsampling_bicubic2d_out_frame_template(
       }
     }
   }
-
-  // c10::raw::intrusive_ptr::decref(input);
 }
 
 template <typename scalar_t>
 static void upsampling_bicubic2d_update_grad_input_template(
     const Tensor& grad_output_,
     Tensor& grad_input,
-    int nbatch,
-    int channels,
-    int input_height,
-    int input_width,
-    int output_height,
-    int output_width,
+    int64_t nbatch,
+    int64_t channels,
+    int64_t input_height,
+    int64_t input_width,
+    int64_t output_height,
+    int64_t output_width,
     bool align_corners) {
   upsampling_2d_shape_check<scalar_t>(
       grad_output_,
-      1,
+      static_cast<int64_t>(1),
       nbatch,
       channels,
       input_height,
@@ -141,18 +137,17 @@ static void upsampling_bicubic2d_update_grad_input_template(
 
   // Special case: input/output same size, just copy
   if (input_height == output_height && input_width == output_width) {
-    for (int output_y = 0; output_y < output_height; output_y++) {
-      for (int output_x = 0; output_x < output_width; output_x++) {
+    for (int64_t output_y = 0; output_y < output_height; output_y++) {
+      for (int64_t output_x = 0; output_x < output_width; output_x++) {
         scalar_t* in = &idata[output_y * input_width + output_x];
         scalar_t* out = &odata[output_y * output_width + output_x];
-        for (int c = 0; c < channels; ++c) {
+        for (int64_t c = 0; c < channels; ++c) {
           in[0] = out[0];
           in += input_width * input_height;
           out += output_width * output_height;
         }
       }
     }
-    // c10::raw::intrusive_ptr::decref(grad_output);
     return;
   }
 
@@ -161,17 +156,17 @@ static void upsampling_bicubic2d_update_grad_input_template(
   const scalar_t width_scale = linear_upsampling_compute_scale<scalar_t>(
       input_width, output_width, align_corners);
 
-  for (int output_y = 0; output_y < output_height; output_y++) {
-    for (int output_x = 0; output_x < output_width; output_x++) {
+  for (int64_t output_y = 0; output_y < output_height; output_y++) {
+    for (int64_t output_x = 0; output_x < output_width; output_x++) {
       scalar_t* in = idata;
       scalar_t* out = odata;
 
       scalar_t real_x = width_scale * output_x;
-      int input_x = real_x;
+      int64_t input_x = real_x;
       scalar_t t_x = real_x - input_x;
 
       scalar_t real_y = height_scale * output_y;
-      int input_y = real_y;
+      int64_t input_y = real_y;
       scalar_t t_y = real_y - input_y;
 
       scalar_t x_coeffs[4];
@@ -180,11 +175,11 @@ static void upsampling_bicubic2d_update_grad_input_template(
       get_cubic_upsampling_coefficients<scalar_t>(x_coeffs, t_x);
       get_cubic_upsampling_coefficients<scalar_t>(y_coeffs, t_y);
 
-      for (int c = 0; c < channels; c++) {
+      for (int64_t c = 0; c < channels; c++) {
         scalar_t out_value = out[output_y * output_width + output_x];
 
-        for (int i = 0; i < 4; i++) {
-          for (int j = 0; j < 4; j++) {
+        for (int64_t i = 0; i < 4; i++) {
+          for (int64_t j = 0; j < 4; j++) {
             upsampling_increment_value_bounded<scalar_t>(
                 in,
                 input_width,
@@ -201,7 +196,6 @@ static void upsampling_bicubic2d_update_grad_input_template(
     }
   }
 
-  // c10::raw::intrusive_ptr::decref(grad_output);
 }
 
 } // namespace native

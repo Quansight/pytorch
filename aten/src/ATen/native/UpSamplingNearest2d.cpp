@@ -7,10 +7,10 @@ namespace native {
 
 template <typename scalar_t>
 void upsampling_nearest2d_update_output(
-    Tensor* input_,
-    Tensor* output,
-    int output_height,
-    int output_width) {
+    Tensor& input_,
+    Tensor& output,
+    int64_t output_height,
+    int64_t output_width) {
   int64_t nbatch = input_.size(0);
   int64_t channels = input_.size(1);
   int64_t input_height = input_.size(2);
@@ -21,7 +21,7 @@ void upsampling_nearest2d_update_output(
 
   upsampling_2d_shape_check(
       input,
-      0,
+      static_cast<int64_t>(0),
       nbatch,
       channels,
       input_height,
@@ -43,60 +43,58 @@ void upsampling_nearest2d_update_output(
 
   // special case: just copy
   if (input_height == output_height && input_width == output_width) {
-    for (int h2 = 0; h2 < output_height; ++h2) {
-      const int h1 = h2;
+    for (int64_t h2 = 0; h2 < output_height; ++h2) {
+      const int64_t h1 = h2;
 
-      for (int w2 = 0; w2 < output_width; ++w2) {
-        const int w1 = w2;
+      for (int64_t w2 = 0; w2 < output_width; ++w2) {
+        const int64_t w1 = w2;
         const scalar_t* pos1 = &idata[h1 * input_width + w1];
         scalar_t* pos2 = &odata[h2 * output_width + w2];
 
-        for (int c = 0; c < channels; ++c) {
+        for (int64_t c = 0; c < channels; ++c) {
           pos2[0] = pos1[0];
           pos1 += input_height * input_width;
           pos2 += output_height * output_width;
         }
       }
     }
-    // c10::raw::intrusive_ptr::decref(input);
     return;
   }
 
-  for (int h2 = 0; h2 < output_height; ++h2) {
-    const int h1 =
+  for (int64_t h2 = 0; h2 < output_height; ++h2) {
+    const int64_t h1 =
         nearest_neighbor_compute_source_index(height_scale, h2, input_height);
 
-    for (int w2 = 0; w2 < output_width; ++w2) {
-      const int w1 =
+    for (int64_t w2 = 0; w2 < output_width; ++w2) {
+      const int64_t w1 =
           nearest_neighbor_compute_source_index(width_scale, w2, input_width);
 
       const scalar_t* pos1 = &idata[h1 * input_width + w1];
       scalar_t* pos2 = &odata[h2 * output_width + w2];
 
-      for (int c = 0; c < channels; ++c) {
+      for (int64_t c = 0; c < channels; ++c) {
         pos2[0] = pos1[0];
         pos1 += input_height * input_width;
         pos2 += output_height * output_width;
       }
     }
   }
-  // c10::raw::intrusive_ptr::decref(input);
 }
 
 template <typename scalar_t>
 void upsampling_nearest2d_update_grad_input)(
-    Tensor *grad_output_,
-    Tensor *grad_input,
-    int nbatch,
-    int channels,
-    int input_height,
-    int input_width,
-    int output_height,
-    int output_width)
+    Tensor& grad_output_,
+    Tensor& grad_input,
+    int64_t nbatch,
+    int64_t channels,
+    int64_t input_height,
+    int64_t input_width,
+    int64_t output_height,
+    int64_t output_width)
 {
   upsampling_2d_shape_check(
       grad_output,
-      1,
+      static_cast<int64_t>(1),
       nbatch,
       channels,
       input_height,
@@ -119,43 +117,41 @@ void upsampling_nearest2d_update_grad_input)(
 
   // special case: just copy
   if (input_height == output_height && input_width == output_width) {
-    for (int h2 = 0; h2 < output_height; ++h2) {
-      const int h1 = h2;
+    for (int64_t h2 = 0; h2 < output_height; ++h2) {
+      const int64_t h1 = h2;
 
-      for (int w2 = 0; w2 < output_width; ++w2) {
-        const int w1 = w2;
+      for (int64_t w2 = 0; w2 < output_width; ++w2) {
+        const int64_t w1 = w2;
         scalar_t* pos1 = &idata[h1 * input_width + w1];
         const scalar_t* pos2 = &odata[h2 * output_width + w2];
 
-        for (int c = 0; c < channels; ++c) {
+        for (int64_t c = 0; c < channels; ++c) {
           pos1[0] = pos2[0];
           pos1 += input_height * input_width;
           pos2 += output_height * output_width;
         }
       }
     }
-    // c10::raw::intrusive_ptr::decref(grad_output);
     return;
   }
 
-  for (int h2 = 0; h2 < output_height; ++h2) {
-    const int h1 =
+  for (int64_t h2 = 0; h2 < output_height; ++h2) {
+    const int64_t h1 =
         nearest_neighbor_compute_source_index(height_scale, h2, input_height);
 
-    for (int w2 = 0; w2 < output_width; ++w2) {
-      const int w1 =
+    for (int64_t w2 = 0; w2 < output_width; ++w2) {
+      const int64_t w1 =
           nearest_neighbor_compute_source_index(width_scale, w2, input_width);
       scalar_t* pos1 = &idata[h1 * input_width + w1];
       const scalar_t* pos2 = &odata[h2 * output_width + w2];
 
-      for (int c = 0; c < channels; ++c) {
+      for (int64_t c = 0; c < channels; ++c) {
         pos1[0] += pos2[0];
         pos1 += input_height * input_width;
         pos2 += output_height * output_width;
       }
     }
   }
-  // c10::raw::intrusive_ptr::decref(grad_output);
 }
 
 } // namespace native

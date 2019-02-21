@@ -1,4 +1,4 @@
-// Adapted from interp.cpp from Caffe util by Pauline Luc
+// Adapted from int64_terp.cpp from Caffe util by Pauline Luc
 // Originally developed by George Papandreou
 
 #include <ATen/ATen.h>
@@ -10,11 +10,11 @@ namespace native {
 
 template <typename scalar_t>
 void upsampling_trilinear3d_update_output(
-    Tensor* input_,
-    Tensor* output,
-    int output_depth,
-    int output_height,
-    int output_width,
+    Tensor& input_,
+    Tensor& output,
+    int64_t output_depth,
+    int64_t output_height,
+    int64_t output_width,
     bool align_corners) {
   int64_t nbatch = input_.size(0);
   int64_t channels = input_.size(1);
@@ -24,7 +24,7 @@ void upsampling_trilinear3d_update_output(
 
   upsampling_3d_shape_check(
       input_,
-      0,
+      static_cast<int64_t>(0),
       nbatch,
       channels,
       input_depth,
@@ -51,21 +51,21 @@ void upsampling_trilinear3d_update_output(
   // special case: just copy
   if (input_depth == output_depth && input_height == output_height &&
       input_width == output_width) {
-    for (int t2 = 0; t2 < output_depth; ++t2) {
-      const int t1 = t2;
+    for (int64_t t2 = 0; t2 < output_depth; ++t2) {
+      const int64_t t1 = t2;
 
-      for (int h2 = 0; h2 < output_height; ++h2) {
-        const int h1 = h2;
+      for (int64_t h2 = 0; h2 < output_height; ++h2) {
+        const int64_t h1 = h2;
 
-        for (int w2 = 0; w2 < output_width; ++w2) {
-          const int w1 = w2;
+        for (int64_t w2 = 0; w2 < output_width; ++w2) {
+          const int64_t w1 = w2;
           const scalar_t* pos1 =
               &idata[t1 * input_height * input_width + h1 * input_width + w1];
           scalar_t* pos2 =
               &odata
                   [t2 * output_height * output_width + h2 * output_width + w2];
 
-          for (int c = 0; c < channels; ++c) {
+          for (int64_t c = 0; c < channels; ++c) {
             pos2[0] = pos1[0];
             pos1 += input_width * input_height * input_depth;
             pos2 += output_width * output_height * output_depth;
@@ -73,7 +73,6 @@ void upsampling_trilinear3d_update_output(
         }
       }
     }
-    // c10::raw::intrusive_ptr::decref(input);
     return;
   }
   const scalar_t rdepth = linear_upsampling_compute_scale<scalar_t>(
@@ -82,30 +81,30 @@ void upsampling_trilinear3d_update_output(
       input_height, output_height, align_corners);
   const scalar_t rwidth = linear_upsampling_compute_scale<scalar_t>(
       input_width, output_width, align_corners);
-  for (int t2 = 0; t2 < output_depth; ++t2) {
+  for (int64_t t2 = 0; t2 < output_depth; ++t2) {
     const scalar_t t1r = linear_upsampling_compute_source_index<scalar_t>(
         rdepth, t2, align_corners);
 
-    const int t1 = t1r;
-    const int t1p = (t1 < input_depth - 1) ? 1 : 0;
+    const int64_t t1 = t1r;
+    const int64_t t1p = (t1 < input_depth - 1) ? 1 : 0;
     const scalar_t t1lambda = t1r - t1;
     const scalar_t t0lambda = (scalar_t)1. - t1lambda;
 
-    for (int h2 = 0; h2 < output_height; ++h2) {
+    for (int64_t h2 = 0; h2 < output_height; ++h2) {
       const scalar_t h1r = linear_upsampling_compute_source_index<scalar_t>(
           rheight, h2, align_corners);
 
-      const int h1 = h1r;
-      const int h1p = (h1 < input_height - 1) ? 1 : 0;
+      const int64_t h1 = h1r;
+      const int64_t h1p = (h1 < input_height - 1) ? 1 : 0;
       const scalar_t h1lambda = h1r - h1;
       const scalar_t h0lambda = (scalar_t)1. - h1lambda;
 
-      for (int w2 = 0; w2 < output_width; ++w2) {
+      for (int64_t w2 = 0; w2 < output_width; ++w2) {
         const scalar_t w1r = linear_upsampling_compute_source_index<scalar_t>(
             rwidth, w2, align_corners);
 
-        const int w1 = w1r;
-        const int w1p = (w1 < input_width - 1) ? 1 : 0;
+        const int64_t w1 = w1r;
+        const int64_t w1p = (w1 < input_width - 1) ? 1 : 0;
         const scalar_t w1lambda = w1r - w1;
         const scalar_t w0lambda = (scalar_t)1. - w1lambda;
         const scalar_t* pos1 =
@@ -113,7 +112,7 @@ void upsampling_trilinear3d_update_output(
         scalar_t* pos2 =
             &odata[t2 * output_height * output_width + h2 * output_width + w2];
 
-        for (int c = 0; c < channels; ++c) {
+        for (int64_t c = 0; c < channels; ++c) {
           pos2[0] = t0lambda *
                   (h0lambda * (w0lambda * pos1[0] + w1lambda * pos1[w1p]) +
                    h1lambda *
@@ -139,25 +138,24 @@ void upsampling_trilinear3d_update_output(
       }
     }
   }
-  // c10::raw::intrusive_ptr::decref(input);
 }
 
 template <typename scalar_t>
 void upsampling_trilinear3d_update_grad_input(
-    Tensor* grad_output_,
-    Tensor* grad_input,
-    int nbatch,
-    int channels,
-    int input_depth,
-    int input_height,
-    int input_width,
-    int output_depth,
-    int output_height,
-    int output_width,
+    Tensor& grad_output_,
+    Tensor& grad_input,
+    int64_t nbatch,
+    int64_t channels,
+    int64_t input_depth,
+    int64_t input_height,
+    int64_t input_width,
+    int64_t output_depth,
+    int64_t output_height,
+    int64_t output_width,
     bool align_corners) {
   upsampling_3d_shape_check(
       grad_output_,
-      1,
+      static_cast<int64_t>(1),
       nbatch,
       channels,
       input_depth,
@@ -181,21 +179,21 @@ void upsampling_trilinear3d_update_grad_input(
   // special case: same-size matching grids
   if (input_depth == output_depth && input_height == output_height &&
       input_width == output_width) {
-    for (int t2 = 0; t2 < output_depth; ++t2) {
-      const int t1 = t2;
+    for (int64_t t2 = 0; t2 < output_depth; ++t2) {
+      const int64_t t1 = t2;
 
-      for (int h2 = 0; h2 < output_height; ++h2) {
-        const int h1 = h2;
+      for (int64_t h2 = 0; h2 < output_height; ++h2) {
+        const int64_t h1 = h2;
 
-        for (int w2 = 0; w2 < output_width; ++w2) {
-          const int w1 = w2;
+        for (int64_t w2 = 0; w2 < output_width; ++w2) {
+          const int64_t w1 = w2;
           scalar_t* pos1 =
               &data1[t1 * input_height * input_width + h1 * input_width + w1];
           const scalar_t* pos2 =
               &data2
                   [t2 * output_height * output_width + h2 * output_width + w2];
 
-          for (int c = 0; c < channels; ++c) {
+          for (int64_t c = 0; c < channels; ++c) {
             pos1[0] += pos2[0];
             pos1 += input_width * input_height * input_depth;
             pos2 += output_width * output_height * output_depth;
@@ -203,7 +201,6 @@ void upsampling_trilinear3d_update_grad_input(
         }
       }
     }
-    // c10::raw::intrusive_ptr::decref(grad_output);
     return;
   }
   const scalar_t rdepth = linear_upsampling_compute_scale<scalar_t>(
@@ -215,27 +212,27 @@ void upsampling_trilinear3d_update_grad_input(
   const scalar_t rwidth = linear_upsampling_compute_scale<scalar_t>(
       input_width, output_width, align_corners);
 
-  for (int t2 = 0; t2 < output_depth; ++t2) {
+  for (int64_t t2 = 0; t2 < output_depth; ++t2) {
     const scalar_t t1r = linear_upsampling_compute_source_index<scalar_t>(
         rdepth, t2, align_corners);
-    const int t1 = t1r;
-    const int t1p = (t1 < input_depth - 1) ? 1 : 0;
+    const int64_t t1 = t1r;
+    const int64_t t1p = (t1 < input_depth - 1) ? 1 : 0;
     const scalar_t t1lambda = t1r - t1;
     const scalar_t t0lambda = (scalar_t)1. - t1lambda;
 
-    for (int h2 = 0; h2 < output_height; ++h2) {
+    for (int64_t h2 = 0; h2 < output_height; ++h2) {
       const scalar_t h1r = linear_upsampling_compute_source_index<scalar_t>(
           rheight, h2, align_corners);
-      const int h1 = h1r;
-      const int h1p = (h1 < input_height - 1) ? 1 : 0;
+      const int64_t h1 = h1r;
+      const int64_t h1p = (h1 < input_height - 1) ? 1 : 0;
       const scalar_t h1lambda = h1r - h1;
       const scalar_t h0lambda = (scalar_t)1. - h1lambda;
 
-      for (int w2 = 0; w2 < output_width; ++w2) {
+      for (int64_t w2 = 0; w2 < output_width; ++w2) {
         const scalar_t w1r = linear_upsampling_compute_source_index<scalar_t>(
             rwidth, w2, align_corners);
-        const int w1 = w1r;
-        const int w1p = (w1 < input_width - 1) ? 1 : 0;
+        const int64_t w1 = w1r;
+        const int64_t w1p = (w1 < input_width - 1) ? 1 : 0;
         const scalar_t w1lambda = w1r - w1;
         const scalar_t w0lambda = (scalar_t)1. - w1lambda;
         scalar_t* pos1 =
@@ -243,7 +240,7 @@ void upsampling_trilinear3d_update_grad_input(
         const scalar_t* pos2 =
             &data2[t2 * output_height * output_width + h2 * output_width + w2];
 
-        for (int c = 0; c < channels; ++c) {
+        for (int64_t c = 0; c < channels; ++c) {
           pos1[0] += t0lambda * h0lambda * w0lambda * pos2[0];
           pos1[w1p] += t0lambda * h0lambda * w1lambda * pos2[0];
           pos1[h1p * input_width] += t0lambda * h1lambda * w0lambda * pos2[0];
@@ -263,7 +260,6 @@ void upsampling_trilinear3d_update_grad_input(
       }
     }
   }
-  // c10::raw::intrusive_ptr::decref(grad_output);
 }
 
 } // namespace native
