@@ -77,7 +77,7 @@ void upsampling_bilinear2d_update_out(
     const int64_t h1p = (h1 < input_height - 1) ? 1 : 0;
 
     const scalar_t h1lambda = h1r - h1;
-    const scalar_t h0lambda = (scalar_t)1. - h1lambda;
+    const scalar_t h0lambda = static_cast<scalar_t>(1.) - h1lambda;
 
     for (int64_t w2 = 0; w2 < output_width; ++w2) {
       const scalar_t w1r = linear_upsampling_compute_source_index<scalar_t>(
@@ -87,7 +87,7 @@ void upsampling_bilinear2d_update_out(
       const int64_t w1p = (w1 < input_width - 1) ? 1 : 0;
 
       const scalar_t w1lambda = w1r - w1;
-      const scalar_t w0lambda = (scalar_t)1. - w1lambda;
+      const scalar_t w0lambda = static_cast<scalar_t>(1.) - w1lambda;
       const scalar_t* pos1 = &idata[h1 * input_width + w1];
       scalar_t* pos2 = &odata[h2 * output_width + w2];
 
@@ -166,7 +166,7 @@ void upsampling_bilinear2d_update_grad_input(
     const int64_t h1p = (h1 < input_height - 1) ? 1 : 0;
 
     const scalar_t h1lambda = h1r - h1;
-    const scalar_t h0lambda = (scalar_t)1. - h1lambda;
+    const scalar_t h0lambda = static_cast<scalar_t>(1.) - h1lambda;
 
     for (int64_t w2 = 0; w2 < output_width; ++w2) {
       const scalar_t w1r = linear_upsampling_compute_source_index<scalar_t>(
@@ -176,7 +176,7 @@ void upsampling_bilinear2d_update_grad_input(
       const int64_t w1p = (w1 < input_width - 1) ? 1 : 0;
 
       const scalar_t w1lambda = w1r - w1;
-      const scalar_t w0lambda = (scalar_t)1. - w1lambda;
+      const scalar_t w0lambda = static_cast<scalar_t>(1.) - w1lambda;
 
       scalar_t* pos1 = &data1[h1 * input_width + w1];
 

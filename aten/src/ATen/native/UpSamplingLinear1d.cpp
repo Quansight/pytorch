@@ -1,4 +1,4 @@
-// Adapted from int64_terp.cpp from Caffe util by Pauline Luc
+// Adapted from interp.cpp from Caffe util by Pauline Luc
 // Originally developed by George Papandreou
 
 #include <ATen/ATen.h>
@@ -9,7 +9,7 @@ namespace at {
 namespace native {
 
 template <typename scalar_t>
-void upsampling_linear1d_update_output)(
+void upsampling_linear1d_update_output(
     Tensor& input_,
     Tensor& output,
     int64_t output_width,
@@ -63,9 +63,9 @@ void upsampling_linear1d_update_output)(
     const int64_t w1 = w1r;
     const int64_t w1p = (w1 < input_width - 1) ? 1 : 0;
     const scalar_t w1lambda = w1r - w1;
-    const scalar_t w0lambda = (scalar_t)1. - w1lambda;
+    const scalar_t w0lambda = static_cast<scalar_t>(1.) - w1lambda;
     const scalar_t* pos1 = &idata[w1];
-    // index w2 is int64_terpolated by idata[w1] and (itself or idata[w1 + 1])
+    // index w2 is interpolated by idata[w1] and (itself or idata[w1 + 1])
     scalar_t* pos2 = &odata[w2];
 
     for (int64_t c = 0; c < channels; ++c) {
@@ -128,7 +128,7 @@ void upsampling_linear1d_update_grad_input(
     const int64_t w1 = w1r;
     const int64_t w1p = (w1 < input_width - 1) ? 1 : 0;
     const scalar_t w1lambda = w1r - w1;
-    const scalar_t w0lambda = (scalar_t)1. - w1lambda;
+    const scalar_t w0lambda = static_cast<scalar_t>(1.) - w1lambda;
     scalar_t* pos1 = &data1[w1];
     const scalar_t* pos2 = &data2[w2];
 

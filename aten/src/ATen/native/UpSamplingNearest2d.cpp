@@ -20,7 +20,7 @@ void upsampling_nearest2d_update_output(
   const float width_scale = (float)input_width / (float)output_width;
 
   upsampling_2d_shape_check(
-      input,
+      input_,
       static_cast<int64_t>(0),
       nbatch,
       channels,
@@ -82,7 +82,7 @@ void upsampling_nearest2d_update_output(
 }
 
 template <typename scalar_t>
-void upsampling_nearest2d_update_grad_input)(
+void upsampling_nearest2d_update_grad_input(
     Tensor& grad_output_,
     Tensor& grad_input,
     int64_t nbatch,
@@ -93,7 +93,7 @@ void upsampling_nearest2d_update_grad_input)(
     int64_t output_width)
 {
   upsampling_2d_shape_check(
-      grad_output,
+      grad_output_,
       static_cast<int64_t>(1),
       nbatch,
       channels,

@@ -1,4 +1,4 @@
-// Adapted from int64_terp.cpp from Caffe util by Pauline Luc
+// Adapted from interp.cpp from Caffe util by Pauline Luc
 // Originally developed by George Papandreou
 
 #include <ATen/ATen.h>
@@ -88,7 +88,7 @@ void upsampling_trilinear3d_update_output(
     const int64_t t1 = t1r;
     const int64_t t1p = (t1 < input_depth - 1) ? 1 : 0;
     const scalar_t t1lambda = t1r - t1;
-    const scalar_t t0lambda = (scalar_t)1. - t1lambda;
+    const scalar_t t0lambda = static_cast<scalar_t>(1.) - t1lambda;
 
     for (int64_t h2 = 0; h2 < output_height; ++h2) {
       const scalar_t h1r = linear_upsampling_compute_source_index<scalar_t>(
@@ -97,7 +97,7 @@ void upsampling_trilinear3d_update_output(
       const int64_t h1 = h1r;
       const int64_t h1p = (h1 < input_height - 1) ? 1 : 0;
       const scalar_t h1lambda = h1r - h1;
-      const scalar_t h0lambda = (scalar_t)1. - h1lambda;
+      const scalar_t h0lambda = static_cast<scalar_t>(1.) - h1lambda;
 
       for (int64_t w2 = 0; w2 < output_width; ++w2) {
         const scalar_t w1r = linear_upsampling_compute_source_index<scalar_t>(
@@ -106,7 +106,7 @@ void upsampling_trilinear3d_update_output(
         const int64_t w1 = w1r;
         const int64_t w1p = (w1 < input_width - 1) ? 1 : 0;
         const scalar_t w1lambda = w1r - w1;
-        const scalar_t w0lambda = (scalar_t)1. - w1lambda;
+        const scalar_t w0lambda = static_cast<scalar_t>(1.) - w1lambda;
         const scalar_t* pos1 =
             &idata[t1 * input_height * input_width + h1 * input_width + w1];
         scalar_t* pos2 =
@@ -218,7 +218,7 @@ void upsampling_trilinear3d_update_grad_input(
     const int64_t t1 = t1r;
     const int64_t t1p = (t1 < input_depth - 1) ? 1 : 0;
     const scalar_t t1lambda = t1r - t1;
-    const scalar_t t0lambda = (scalar_t)1. - t1lambda;
+    const scalar_t t0lambda = static_cast<scalar_t>(1.) - t1lambda;
 
     for (int64_t h2 = 0; h2 < output_height; ++h2) {
       const scalar_t h1r = linear_upsampling_compute_source_index<scalar_t>(
@@ -226,7 +226,7 @@ void upsampling_trilinear3d_update_grad_input(
       const int64_t h1 = h1r;
       const int64_t h1p = (h1 < input_height - 1) ? 1 : 0;
       const scalar_t h1lambda = h1r - h1;
-      const scalar_t h0lambda = (scalar_t)1. - h1lambda;
+      const scalar_t h0lambda = static_cast<scalar_t>(1.) - h1lambda;
 
       for (int64_t w2 = 0; w2 < output_width; ++w2) {
         const scalar_t w1r = linear_upsampling_compute_source_index<scalar_t>(
@@ -234,7 +234,7 @@ void upsampling_trilinear3d_update_grad_input(
         const int64_t w1 = w1r;
         const int64_t w1p = (w1 < input_width - 1) ? 1 : 0;
         const scalar_t w1lambda = w1r - w1;
-        const scalar_t w0lambda = (scalar_t)1. - w1lambda;
+        const scalar_t w0lambda = static_cast<scalar_t>(1.) - w1lambda;
         scalar_t* pos1 =
             &data1[t1 * input_height * input_width + h1 * input_width + w1];
         const scalar_t* pos2 =

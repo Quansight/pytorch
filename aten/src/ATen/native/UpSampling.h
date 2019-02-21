@@ -132,8 +132,8 @@ static inline scalar_t linear_upsampling_compute_scale(
    *     src_idx + 0.5 = scale * (dst_index + 0.5)
    */
   if (output_size > 1) {
-    return align_corners ? (scalar_t)(input_size - 1) / (output_size - 1)
-                         : (scalar_t)input_size / output_size;
+    return align_corners ? static_cast<scalar_t>(input_size - 1) / (output_size - 1)
+                         : static_cast<scalar_t>(input_size) / output_size;
   } else {
     return scalar_t(0);
   }
@@ -157,7 +157,7 @@ static inline int64_t nearest_neighbor_compute_source_index(
     int64_t dst_index,
     int64_t input_size) {
   const int64_t src_index =
-      std::min(static_cast<int>(floorf(dst_index * scale)), input_size - 1);
+      std::min(static_cast<int64_t>(floorf(dst_index * scale)), input_size - 1);
   return src_index;
 }
 
@@ -168,8 +168,8 @@ static scalar_t upsampling_get_value_bounded(
     int64_t height,
     int64_t x,
     int64_t y) {
-  int64_t access_x = std::max(std::min(x, width - 1), 0);
-  int64_t access_y = std::max(std::min(y, height - 1), 0);
+  int64_t access_x = std::max(std::min(x, width - 1), static_cast<int64_t>(0));
+  int64_t access_y = std::max(std::min(y, height - 1), static_cast<int64_t>(0));
   return data[access_y * width + access_x];
 }
 
@@ -181,8 +181,8 @@ static void upsampling_increment_value_bounded(
     int64_t x,
     int64_t y,
     scalar_t value) {
-  int64_t access_x = std::max(std::min(x, width - 1), 0);
-  int64_t access_y = std::max(std::min(y, height - 1), 0);
+  int64_t access_x = std::max(std::min(x, width - 1), static_cast<int64_t>(0));
+  int64_t access_y = std::max(std::min(y, height - 1), static_cast<int64_t>(0));
   data[access_y * width + access_x] += value;
 }
 

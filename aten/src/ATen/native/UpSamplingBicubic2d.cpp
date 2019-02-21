@@ -52,7 +52,7 @@ static void upsampling_bicubic2d_out_frame_template(
     return;
   }
 
-  // Bicubic int64_terpolation
+  // Bicubic interpolation
   const scalar_t height_scale = linear_upsampling_compute_scale<scalar_t>(
       input_height, output_height, align_corners);
   const scalar_t width_scale = linear_upsampling_compute_scale<scalar_t>(
@@ -76,7 +76,7 @@ static void upsampling_bicubic2d_out_frame_template(
 
         // Interpolate 4 times in the x direction
         for (int64_t i = 0; i < 4; i++) {
-          coefficients[i] = cubic_int64_terp1d<scalar_t>(
+          coefficients[i] = cubic_interp1d<scalar_t>(
               upsampling_get_value_bounded<scalar_t>(
                   in, input_width, input_height, input_x - 1, input_y - 1 + i),
               upsampling_get_value_bounded<scalar_t>(
@@ -88,8 +88,8 @@ static void upsampling_bicubic2d_out_frame_template(
               t_x);
         }
 
-        // Interpolate in the y direction using x int64_terpolations
-        out[output_y * output_width + output_x] = cubic_int64_terp1d<scalar_t>(
+        // Interpolate in the y direction using x interpolations
+        out[output_y * output_width + output_x] = cubic_interp1d<scalar_t>(
             coefficients[0],
             coefficients[1],
             coefficients[2],
