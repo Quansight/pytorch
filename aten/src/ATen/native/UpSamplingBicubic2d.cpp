@@ -4,9 +4,10 @@
 
 namespace at {
 namespace native {
+namespace {
 
 template <typename scalar_t>
-static void upsampling_bicubic2d_out_frame_template(
+Tensor upsampling_bicubic2d_cpu_template(
     const Tensor& input_,
     Tensor& output,
     int64_t output_height,
@@ -102,10 +103,11 @@ static void upsampling_bicubic2d_out_frame_template(
       }
     }
   }
+  return output;
 }
 
 template <typename scalar_t>
-static void upsampling_bicubic2d_update_grad_input_template(
+static void upsampling_bicubic2d_backward_cpu_template(
     const Tensor& grad_output_,
     Tensor& grad_input,
     int64_t nbatch,
@@ -195,7 +197,46 @@ static void upsampling_bicubic2d_update_grad_input_template(
       }
     }
   }
+  return grad_input;
+}
+} // namespace
 
+Tensor upsampling_bicubic2d_cpu(
+    const Tensor& input,
+    Tensor& output,
+    int64_t output_height,
+    int64_t output_width,
+    bool align_corners) {
+  return AT_DISPATCH_FLOATING_TYPES(
+      input.type(), "upsampling_bicubic2d_cpu", [&] {
+        return upsampling_bicubic2d_cpu_template<scalar_t>(
+            input, output, output_height, output_width, align_corners);
+      });
+}
+
+Tensor upsampling_bicubic2d_backward_cpu(
+    const Tensor& grad_output,
+    Tensor& grad_input,
+    int64_t nbatch,
+    int64_t channels,
+    int64_t input_height,
+    int64_t input_width,
+    int64_t output_height,
+    int64_t output_width,
+    bool align_corners) {
+  return AT_DISPATCH_FLOATING_TYPES(
+      input.type(), "upsampling_bicubic2d_backward_cpu", [&] {
+        return upsampling_bicubic2d_backward_cpu_template<scalar_t>(
+            grad_output,
+            grad_input,
+            nbatch,
+            channels,
+            input_height,
+            input_width,
+            output_height,
+            output_width,
+            align_corners);
+      });
 }
 
 } // namespace native
