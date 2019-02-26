@@ -3,14 +3,14 @@
 
 #include <ATen/ATen.h>
 #include <ATen/NativeFunctions.h>
-#include <ATen/native/UpSampling.h>
+#include <ATen/native/UpSample.h>
 
 namespace at {
 namespace native {
 namespace {
 
 template <typename scalar_t>
-Tensor upsampling_bilinear2d_cpu_template(
+Tensor upsample_bilinear2d_out_cpu_template(
     const Tensor& input_,
     Tensor& output,
     int64_t output_height,
@@ -21,7 +21,7 @@ Tensor upsampling_bilinear2d_cpu_template(
   int64_t input_height = input_.size(2);
   int64_t input_width = input_.size(3);
 
-  upsampling_2d_shape_check(
+  upsample_2d_shape_check(
       input_,
       static_cast<int64_t>(0),
       nbatch,
@@ -64,14 +64,14 @@ Tensor upsampling_bilinear2d_cpu_template(
     }
     return output;
   }
-  const scalar_t rheight = linear_upsampling_compute_scale<scalar_t>(
+  const scalar_t rheight = linear_upsample_compute_scale<scalar_t>(
       input_height, output_height, align_corners);
 
-  const scalar_t rwidth = linear_upsampling_compute_scale<scalar_t>(
+  const scalar_t rwidth = linear_upsample_compute_scale<scalar_t>(
       input_width, output_width, align_corners);
 
   for (int64_t h2 = 0; h2 < output_height; ++h2) {
-    const scalar_t h1r = linear_upsampling_compute_source_index<scalar_t>(
+    const scalar_t h1r = linear_upsample_compute_source_index<scalar_t>(
         rheight, h2, align_corners);
 
     const int64_t h1 = h1r;
@@ -81,7 +81,7 @@ Tensor upsampling_bilinear2d_cpu_template(
     const scalar_t h0lambda = static_cast<scalar_t>(1.) - h1lambda;
 
     for (int64_t w2 = 0; w2 < output_width; ++w2) {
-      const scalar_t w1r = linear_upsampling_compute_source_index<scalar_t>(
+      const scalar_t w1r = linear_upsample_compute_source_index<scalar_t>(
           rwidth, w2, align_corners);
 
       const int64_t w1 = w1r;
@@ -106,7 +106,7 @@ Tensor upsampling_bilinear2d_cpu_template(
 }
 
 template <typename scalar_t>
-Tensor upsampling_bilinear2d_backward_cpu_template(
+Tensor upsample_bilinear2d_backward_out_cpu_template(
     const Tensor& grad_output_,
     Tensor& grad_input,
     int64_t nbatch,
@@ -116,7 +116,7 @@ Tensor upsampling_bilinear2d_backward_cpu_template(
     int64_t output_height,
     int64_t output_width,
     bool align_corners) {
-  upsampling_2d_shape_check(
+  upsample_2d_shape_check(
       grad_output_,
       static_cast<int64_t>(1),
       nbatch,
@@ -155,13 +155,13 @@ Tensor upsampling_bilinear2d_backward_cpu_template(
     return grad_input;
   }
 
-  const scalar_t rheight = linear_upsampling_compute_scale<scalar_t>(
+  const scalar_t rheight = linear_upsample_compute_scale<scalar_t>(
       input_height, output_height, align_corners);
-  const scalar_t rwidth = linear_upsampling_compute_scale<scalar_t>(
+  const scalar_t rwidth = linear_upsample_compute_scale<scalar_t>(
       input_width, output_width, align_corners);
 
   for (int64_t h2 = 0; h2 < output_height; ++h2) {
-    const scalar_t h1r = linear_upsampling_compute_source_index<scalar_t>(
+    const scalar_t h1r = linear_upsample_compute_source_index<scalar_t>(
         rheight, h2, align_corners);
 
     const int64_t h1 = h1r;
@@ -171,7 +171,7 @@ Tensor upsampling_bilinear2d_backward_cpu_template(
     const scalar_t h0lambda = static_cast<scalar_t>(1.) - h1lambda;
 
     for (int64_t w2 = 0; w2 < output_width; ++w2) {
-      const scalar_t w1r = linear_upsampling_compute_source_index<scalar_t>(
+      const scalar_t w1r = linear_upsample_compute_source_index<scalar_t>(
           rwidth, w2, align_corners);
 
       const int64_t w1 = w1r;
@@ -198,20 +198,33 @@ Tensor upsampling_bilinear2d_backward_cpu_template(
 }
 } // namespace
 
-Tensor upsampling_bilinear2d_cpu(
+Tensor upsample_bilinear2d_out_cpu(
     const Tensor& input,
     Tensor& output,
     int64_t output_height,
     int64_t output_width,
     bool align_corners) {
   return AT_DISPATCH_FLOATING_TYPES_AND_HALF(
-      input.type(), "upsampling_bilinear2d_cpu", [&] {
-        return upsampling_bilinear2d_cpu_template<scalar_t>(
+      input.type(), "upsample_bilinear2d_out_cpu", [&] {
+        return upsample_bilinear2d_out_cpu_template<scalar_t>(
             input, output, output_height, output_width, align_corners);
       });
 }
 
-Tensor upsampling_bilinear2d_backward_cpu(
+Tensor upsample_bilinear2d_cpu(
+    const Tensor& input,
+    int64_t output_height,
+    int64_t output_width,
+    bool align_corners) {
+  auto output = at::empty({0}, input.options());
+  return AT_DISPATCH_FLOATING_TYPES_AND_HALF(
+      input.type(), "upsample_bilinear2d_cpu", [&] {
+        return upsample_bilinear2d_out_cpu_template<scalar_t>(
+            input, output, output_height, output_width, align_corners);
+      });
+}
+
+Tensor upsample_bilinear2d_backward_out_cpu(
     const Tensor& grad_output,
     Tensor& grad_input,
     int64_t nbatch,
@@ -222,8 +235,33 @@ Tensor upsampling_bilinear2d_backward_cpu(
     int64_t output_width,
     bool align_corners) {
   return AT_DISPATCH_FLOATING_TYPES_AND_HALF(
-      grad_output.type(), "upsampling_bilinear2d_backward_cpu", [&] {
-        return upsampling_bilinear2d_backward_cpu_template<scalar_t>(
+      grad_output.type(), "upsample_bilinear2d_backward_out_cpu", [&] {
+        return upsample_bilinear2d_backward_out_cpu_template<scalar_t>(
+            grad_output,
+            grad_input,
+            nbatch,
+            channels,
+            input_height,
+            input_width,
+            output_height,
+            output_width,
+            align_corners);
+      });
+}
+
+Tensor upsample_bilinear2d_backward_cpu(
+    const Tensor& grad_output,
+    int64_t nbatch,
+    int64_t channels,
+    int64_t input_height,
+    int64_t input_width,
+    int64_t output_height,
+    int64_t output_width,
+    bool align_corners) {
+  auto grad_input = at::zeros_like(grad_output);
+  return AT_DISPATCH_FLOATING_TYPES_AND_HALF(
+      grad_output.type(), "upsample_bilinear2d_backward_cpu", [&] {
+        return upsample_bilinear2d_backward_out_cpu_template<scalar_t>(
             grad_output,
             grad_input,
             nbatch,

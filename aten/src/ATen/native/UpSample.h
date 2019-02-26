@@ -20,7 +20,7 @@ static inline void check_dim_size(
       size);
 }
 
-static inline void upsampling_1d_shape_check(
+static inline void upsample_1d_shape_check(
     const Tensor& data,
     int64_t type_check,
     int64_t nbatch,
@@ -45,7 +45,7 @@ static inline void upsampling_1d_shape_check(
   }
 }
 
-static inline void upsampling_2d_shape_check(
+static inline void upsample_2d_shape_check(
     const Tensor& data,
     int64_t type_check,
     int64_t nbatch,
@@ -76,7 +76,7 @@ static inline void upsampling_2d_shape_check(
   }
 }
 
-static inline void upsampling_3d_shape_check(
+static inline void upsample_3d_shape_check(
     const Tensor& data,
     int64_t type_check,
     int64_t nbatch,
@@ -112,7 +112,7 @@ static inline void upsampling_3d_shape_check(
 }
 
 template <typename scalar_t>
-static inline scalar_t linear_upsampling_compute_scale(
+static inline scalar_t linear_upsample_compute_scale(
     int64_t input_size,
     int64_t output_size,
     bool align_corners) {
@@ -137,7 +137,7 @@ static inline scalar_t linear_upsampling_compute_scale(
 }
 
 template <typename scalar_t>
-static inline scalar_t linear_upsampling_compute_source_index(
+static inline scalar_t linear_upsample_compute_source_index(
     scalar_t scale,
     int64_t dst_index,
     bool align_corners) {
@@ -159,7 +159,7 @@ static inline int64_t nearest_neighbor_compute_source_index(
 }
 
 template <typename scalar_t>
-static scalar_t upsampling_get_value_bounded(
+static scalar_t upsample_get_value_bounded(
     scalar_t* data,
     int64_t width,
     int64_t height,
@@ -171,7 +171,7 @@ static scalar_t upsampling_get_value_bounded(
 }
 
 template <typename scalar_t>
-static void upsampling_increment_value_bounded(
+static void upsample_increment_value_bounded(
     scalar_t* data,
     int64_t width,
     int64_t height,
@@ -196,7 +196,7 @@ static inline scalar_t cubic_convolution2(scalar_t x, scalar_t A) {
 }
 
 template <typename scalar_t>
-static inline void get_cubic_upsampling_coefficients(
+static inline void get_cubic_upsample_coefficients(
     scalar_t coeffs[4],
     scalar_t t) {
   scalar_t A = -0.75;
@@ -219,7 +219,7 @@ static inline scalar_t cubic_interp1d(
     scalar_t x3,
     scalar_t t) {
   scalar_t coeffs[4];
-  get_cubic_upsampling_coefficients<scalar_t>(coeffs, t);
+  get_cubic_upsample_coefficients<scalar_t>(coeffs, t);
 
   return x0 * coeffs[0] + x1 * coeffs[1] + x2 * coeffs[2] + x3 * coeffs[3];
 }

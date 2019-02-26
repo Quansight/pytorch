@@ -1,13 +1,13 @@
 #include <ATen/ATen.h>
 #include <ATen/NativeFunctions.h>
-#include <ATen/native/UpSampling.h>
+#include <ATen/native/UpSample.h>
 
 namespace at {
 namespace native {
 namespace {
 
 template <typename scalar_t>
-Tensor upsampling_nearest2d_cpu_template(
+Tensor upsample_nearest2d_out_cpu_template(
     const Tensor& input_,
     Tensor& output,
     int64_t output_height,
@@ -20,7 +20,7 @@ Tensor upsampling_nearest2d_cpu_template(
   const float height_scale = (float)input_height / (float)output_height;
   const float width_scale = (float)input_width / (float)output_width;
 
-  upsampling_2d_shape_check(
+  upsample_2d_shape_check(
       input_,
       static_cast<int64_t>(0),
       nbatch,
@@ -84,7 +84,7 @@ Tensor upsampling_nearest2d_cpu_template(
 }
 
 template <typename scalar_t>
-Tensor upsampling_nearest2d_backward_cpu_template(
+Tensor upsample_nearest2d_backward_out_cpu_template(
     const Tensor& grad_output_,
     Tensor& grad_input,
     int64_t nbatch,
@@ -93,7 +93,7 @@ Tensor upsampling_nearest2d_backward_cpu_template(
     int64_t input_width,
     int64_t output_height,
     int64_t output_width) {
-  upsampling_2d_shape_check(
+  upsample_2d_shape_check(
       grad_output_,
       static_cast<int64_t>(1),
       nbatch,
@@ -157,19 +157,31 @@ Tensor upsampling_nearest2d_backward_cpu_template(
 }
 } // namespace
 
-Tensor upsampling_nearest2d_cpu(
+Tensor upsample_nearest2d_out_cpu(
     const Tensor& input,
     Tensor& output,
     int64_t output_height,
     int64_t output_width) {
   return AT_DISPATCH_FLOATING_TYPES_AND_HALF(
-      input.type(), "upsampling_nearest2d_cpu", [&] {
-        return upsampling_nearest2d_cpu_template<scalar_t>(
+      input.type(), "upsample_nearest2d_out_cpu", [&] {
+        return upsample_nearest2d_out_cpu_template<scalar_t>(
             input, output, output_height, output_width);
       });
 }
 
-Tensor upsampling_nearest2d_backward_cpu(
+Tensor upsample_nearest2d_cpu(
+    const Tensor& input,
+    int64_t output_height,
+    int64_t output_width) {
+  auto output = at::empty({0}, input.options());
+  return AT_DISPATCH_FLOATING_TYPES_AND_HALF(
+      input.type(), "upsample_nearest2d_cpu", [&] {
+        return upsample_nearest2d_out_cpu_template<scalar_t>(
+            input, output, output_height, output_width);
+      });
+}
+
+Tensor upsample_nearest2d_backward_out_cpu(
     const Tensor& grad_output,
     Tensor& grad_input,
     int64_t nbatch,
@@ -179,8 +191,31 @@ Tensor upsampling_nearest2d_backward_cpu(
     int64_t output_height,
     int64_t output_width) {
   return AT_DISPATCH_FLOATING_TYPES_AND_HALF(
-      grad_output.type(), "upsampling_nearest2d_backward_cpu", [&] {
-        return upsampling_nearest2d_backward_cpu_template<scalar_t>(
+      grad_output.type(), "upsample_nearest2d_backward_out_cpu", [&] {
+        return upsample_nearest2d_backward_out_cpu_template<scalar_t>(
+            grad_output,
+            grad_input,
+            nbatch,
+            channels,
+            input_height,
+            input_width,
+            output_height,
+            output_width);
+      });
+}
+
+Tensor upsample_nearest2d_backward_cpu(
+    const Tensor& grad_output,
+    int64_t nbatch,
+    int64_t channels,
+    int64_t input_height,
+    int64_t input_width,
+    int64_t output_height,
+    int64_t output_width) {
+  auto grad_input = at::zeros_like(grad_output);
+  return AT_DISPATCH_FLOATING_TYPES_AND_HALF(
+      grad_output.type(), "upsample_nearest2d_backward_cpu", [&] {
+        return upsample_nearest2d_backward_out_cpu_template<scalar_t>(
             grad_output,
             grad_input,
             nbatch,
