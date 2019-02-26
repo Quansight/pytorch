@@ -18,7 +18,7 @@ Tensor upsampling_bicubic2d_cpu_template(
   int64_t input_height = input_.size(2);
   int64_t input_width = input_.size(3);
 
-  upsampling_2d_shape_check<scalar_t>(
+  upsampling_2d_shape_check(
       input_,
       static_cast<int64_t>(0),
       nbatch,
@@ -50,7 +50,7 @@ Tensor upsampling_bicubic2d_cpu_template(
         }
       }
     }
-    return;
+    return output;
   }
 
   // Bicubic interpolation
@@ -107,7 +107,7 @@ Tensor upsampling_bicubic2d_cpu_template(
 }
 
 template <typename scalar_t>
-static void upsampling_bicubic2d_backward_cpu_template(
+Tensor upsampling_bicubic2d_backward_cpu_template(
     const Tensor& grad_output_,
     Tensor& grad_input,
     int64_t nbatch,
@@ -117,7 +117,7 @@ static void upsampling_bicubic2d_backward_cpu_template(
     int64_t output_height,
     int64_t output_width,
     bool align_corners) {
-  upsampling_2d_shape_check<scalar_t>(
+  upsampling_2d_shape_check(
       grad_output_,
       static_cast<int64_t>(1),
       nbatch,
@@ -150,7 +150,7 @@ static void upsampling_bicubic2d_backward_cpu_template(
         }
       }
     }
-    return;
+    return grad_input;
   }
 
   const scalar_t height_scale = linear_upsampling_compute_scale<scalar_t>(
@@ -207,7 +207,7 @@ Tensor upsampling_bicubic2d_cpu(
     int64_t output_height,
     int64_t output_width,
     bool align_corners) {
-  return AT_DISPATCH_FLOATING_TYPES(
+  return AT_DISPATCH_FLOATING_TYPES_AND_HALF(
       input.type(), "upsampling_bicubic2d_cpu", [&] {
         return upsampling_bicubic2d_cpu_template<scalar_t>(
             input, output, output_height, output_width, align_corners);
@@ -224,8 +224,8 @@ Tensor upsampling_bicubic2d_backward_cpu(
     int64_t output_height,
     int64_t output_width,
     bool align_corners) {
-  return AT_DISPATCH_FLOATING_TYPES(
-      input.type(), "upsampling_bicubic2d_backward_cpu", [&] {
+  return AT_DISPATCH_FLOATING_TYPES_AND_HALF(
+      grad_output.type(), "upsampling_bicubic2d_backward_cpu", [&] {
         return upsampling_bicubic2d_backward_cpu_template<scalar_t>(
             grad_output,
             grad_input,

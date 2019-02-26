@@ -4,10 +4,11 @@
 
 namespace at {
 namespace native {
+namespace {
 
 template <typename scalar_t>
-void upsampling_nearest1d_update_output(
-    Tensor& input_,
+Tensor upsampling_nearest1d_cpu_template(
+    const Tensor& input_,
     Tensor& output,
     int64_t output_width) {
   int64_t nbatch = input_.size(0);
@@ -48,7 +49,7 @@ void upsampling_nearest1d_update_output(
         pos2 += output_width;
       }
     }
-    return;
+    return output;
   }
 
   for (int64_t w2 = 0; w2 < output_width; ++w2) {
@@ -64,11 +65,12 @@ void upsampling_nearest1d_update_output(
       pos2 += output_width;
     }
   }
+  return output;
 }
 
 template <typename scalar_t>
-void upsampling_nearest1d_update_grad_input(
-    Tensor& grad_output_,
+Tensor upsampling_nearest1d_backward_cpu_template(
+    const Tensor& grad_output_,
     Tensor& grad_input,
     int64_t nbatch,
     int64_t channels,
@@ -107,7 +109,7 @@ void upsampling_nearest1d_update_grad_input(
         pos2 += output_width;
       }
     }
-    return;
+    return grad_input;
   }
 
   for (int64_t w2 = 0; w2 < output_width; ++w2) {
@@ -123,6 +125,38 @@ void upsampling_nearest1d_update_grad_input(
       pos2 += output_width;
     }
   }
+  return grad_input;
+}
+} // namespace
+
+Tensor upsampling_nearest1d_cpu(
+    const Tensor& input,
+    Tensor& output,
+    int64_t output_width) {
+  return AT_DISPATCH_FLOATING_TYPES_AND_HALF(
+      input.type(), "upsampling_nearest1d_cpu", [&] {
+        return upsampling_nearest1d_cpu_template<scalar_t>(
+            input, output, output_width);
+      });
+}
+
+Tensor upsampling_nearest1d_backward_cpu(
+    const Tensor& grad_output,
+    Tensor& grad_input,
+    int64_t nbatch,
+    int64_t channels,
+    int64_t input_width,
+    int64_t output_width) {
+  return AT_DISPATCH_FLOATING_TYPES_AND_HALF(
+      grad_output.type(), "upsampling_nearest1d_backward_cpu", [&] {
+        return upsampling_nearest1d_backward_cpu_template<scalar_t>(
+            grad_output,
+            grad_input,
+            nbatch,
+            channels,
+            input_width,
+            output_width);
+      });
 }
 
 } // namespace native

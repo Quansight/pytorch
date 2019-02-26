@@ -4,10 +4,11 @@
 
 namespace at {
 namespace native {
+namespace {
 
 template <typename scalar_t>
-void upsampling_nearest3d_update_output(
-    Tensor& input_,
+Tensor upsampling_nearest3d_cpu_template(
+    const Tensor& input_,
     Tensor& output,
     int64_t output_depth,
     int64_t output_height,
@@ -73,7 +74,7 @@ void upsampling_nearest3d_update_output(
         }
       }
     }
-    return;
+    return output;
   }
 
   for (int64_t d2 = 0; d2 < output_depth; ++d2) {
@@ -100,11 +101,12 @@ void upsampling_nearest3d_update_output(
       }
     }
   }
+  return output;
 }
 
 template <typename scalar_t>
-void upsampling_nearest3d_update_grad_input(
-    Tensor& grad_output_,
+Tensor upsampling_nearest3d_backward_cpu_template(
+    const Tensor& grad_output_,
     Tensor& grad_input,
     int64_t nbatch,
     int64_t channels,
@@ -166,7 +168,7 @@ void upsampling_nearest3d_update_grad_input(
         }
       }
     }
-    return;
+    return grad_input;
   }
 
   for (int64_t d2 = 0; d2 < output_depth; ++d2) {
@@ -193,6 +195,52 @@ void upsampling_nearest3d_update_grad_input(
       }
     }
   }
+  return grad_input;
+}
+} // namespace
+
+Tensor upsampling_nearest3d_cpu(
+    const Tensor& input,
+    Tensor& output,
+    int64_t output_depth,
+    int64_t output_height,
+    int64_t output_width) {
+  return AT_DISPATCH_FLOATING_TYPES_AND_HALF(
+      input.type(), "upsampling_nearest3d_cpu", [&] {
+        return upsampling_nearest3d_cpu_template<scalar_t>(
+            input,
+            output,
+            output_depth,
+            output_height,
+            output_width);
+      });
+}
+
+Tensor upsampling_nearest3d_backward_cpu(
+    const Tensor& grad_output,
+    Tensor& grad_input,
+    int64_t nbatch,
+    int64_t channels,
+    int64_t input_depth,
+    int64_t input_height,
+    int64_t input_width,
+    int64_t output_depth,
+    int64_t output_height,
+    int64_t output_width) {
+  return AT_DISPATCH_FLOATING_TYPES_AND_HALF(
+      grad_output.type(), "upsampling_nearest3d_backward_cpu", [&] {
+        return upsampling_nearest3d_backward_cpu_template<scalar_t>(
+            grad_output,
+            grad_input,
+            nbatch,
+            channels,
+            input_depth,
+            input_height,
+            input_width,
+            output_depth,
+            output_height,
+            output_width);
+      });
 }
 
 } // namespace native

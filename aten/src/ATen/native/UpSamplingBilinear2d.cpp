@@ -7,10 +7,11 @@
 
 namespace at {
 namespace native {
+namespace {
 
 template <typename scalar_t>
-void upsampling_bilinear2d_update_out(
-    Tensor& input_,
+Tensor upsampling_bilinear2d_cpu_template(
+    const Tensor& input_,
     Tensor& output,
     int64_t output_height,
     int64_t output_width,
@@ -61,7 +62,7 @@ void upsampling_bilinear2d_update_out(
         }
       }
     }
-    return;
+    return output;
   }
   const scalar_t rheight = linear_upsampling_compute_scale<scalar_t>(
       input_height, output_height, align_corners);
@@ -101,11 +102,12 @@ void upsampling_bilinear2d_update_out(
       }
     }
   }
+  return output;
 }
 
 template <typename scalar_t>
-void upsampling_bilinear2d_update_grad_input(
-    Tensor& grad_output_,
+Tensor upsampling_bilinear2d_backward_cpu_template(
+    const Tensor& grad_output_,
     Tensor& grad_input,
     int64_t nbatch,
     int64_t channels,
@@ -150,7 +152,7 @@ void upsampling_bilinear2d_update_grad_input(
         }
       }
     }
-    return;
+    return grad_input;
   }
 
   const scalar_t rheight = linear_upsampling_compute_scale<scalar_t>(
@@ -192,6 +194,46 @@ void upsampling_bilinear2d_update_grad_input(
       }
     }
   }
+  return grad_input;
+}
+} // namespace
+
+Tensor upsampling_bilinear2d_cpu(
+    const Tensor& input,
+    Tensor& output,
+    int64_t output_height,
+    int64_t output_width,
+    bool align_corners) {
+  return AT_DISPATCH_FLOATING_TYPES_AND_HALF(
+      input.type(), "upsampling_bilinear2d_cpu", [&] {
+        return upsampling_bilinear2d_cpu_template<scalar_t>(
+            input, output, output_height, output_width, align_corners);
+      });
+}
+
+Tensor upsampling_bilinear2d_backward_cpu(
+    const Tensor& grad_output,
+    Tensor& grad_input,
+    int64_t nbatch,
+    int64_t channels,
+    int64_t input_height,
+    int64_t input_width,
+    int64_t output_height,
+    int64_t output_width,
+    bool align_corners) {
+  return AT_DISPATCH_FLOATING_TYPES_AND_HALF(
+      grad_output.type(), "upsampling_bilinear2d_backward_cpu", [&] {
+        return upsampling_bilinear2d_backward_cpu_template<scalar_t>(
+            grad_output,
+            grad_input,
+            nbatch,
+            channels,
+            input_height,
+            input_width,
+            output_height,
+            output_width,
+            align_corners);
+      });
 }
 
 } // namespace native

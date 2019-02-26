@@ -5,9 +5,8 @@
 namespace at {
 namespace native {
 
-template <typename scalar_t>
 static inline void check_dim_size(
-    scalar_t& input,
+    const Tensor& input,
     int64_t dim,
     int64_t dim_size,
     int64_t size) {
@@ -21,9 +20,8 @@ static inline void check_dim_size(
       size);
 }
 
-template <typename scalar_t>
 static inline void upsampling_1d_shape_check(
-    scalar_t& data,
+    const Tensor& data,
     int64_t type_check,
     int64_t nbatch,
     int64_t nchannels,
@@ -41,15 +39,14 @@ static inline void upsampling_1d_shape_check(
         !data.numel() == 0 && data.dim() == 3,
         "non-empty 3D input tensor expected but got: %s");
   } else if (type_check == 1) {
-    check_dim_size<scalar_t>(data, 3, 0, nbatch);
-    check_dim_size<scalar_t>(data, 3, 1, nchannels);
-    check_dim_size<scalar_t>(data, 4, 3, output_width);
+    check_dim_size(data, 3, 0, nbatch);
+    check_dim_size(data, 3, 1, nchannels);
+    check_dim_size(data, 4, 3, output_width);
   }
 }
 
-template <typename scalar_t>
 static inline void upsampling_2d_shape_check(
-    scalar_t& data,
+    const Tensor& data,
     int64_t type_check,
     int64_t nbatch,
     int64_t nchannels,
@@ -72,16 +69,15 @@ static inline void upsampling_2d_shape_check(
         !data.numel() == 0 && data.dim() == 4,
         "non-empty 4D input tensor expected but got: %s");
   } else if (type_check == 1) {
-    check_dim_size<scalar_t>(data, 4, 0, nbatch);
-    check_dim_size<scalar_t>(data, 4, 1, nchannels);
-    check_dim_size<scalar_t>(data, 4, 2, output_height);
-    check_dim_size<scalar_t>(data, 4, 3, output_width);
+    check_dim_size(data, 4, 0, nbatch);
+    check_dim_size(data, 4, 1, nchannels);
+    check_dim_size(data, 4, 2, output_height);
+    check_dim_size(data, 4, 3, output_width);
   }
 }
 
-template <typename scalar_t>
 static inline void upsampling_3d_shape_check(
-    scalar_t& data,
+    const Tensor& data,
     int64_t type_check,
     int64_t nbatch,
     int64_t nchannels,
@@ -107,11 +103,11 @@ static inline void upsampling_3d_shape_check(
     AT_CHECK(
         data.dim() == 5, "5D input tensor expected but got: %sD", data.dim());
   } else if (type_check == 1) {
-    check_dim_size<scalar_t>(data, 5, 0, nbatch);
-    check_dim_size<scalar_t>(data, 5, 1, nchannels);
-    check_dim_size<scalar_t>(data, 5, 2, output_depth);
-    check_dim_size<scalar_t>(data, 5, 3, output_height);
-    check_dim_size<scalar_t>(data, 5, 4, output_width);
+    check_dim_size(data, 5, 0, nbatch);
+    check_dim_size(data, 5, 1, nchannels);
+    check_dim_size(data, 5, 2, output_depth);
+    check_dim_size(data, 5, 3, output_height);
+    check_dim_size(data, 5, 4, output_width);
   }
 }
 
@@ -132,8 +128,9 @@ static inline scalar_t linear_upsampling_compute_scale(
    *     src_idx + 0.5 = scale * (dst_index + 0.5)
    */
   if (output_size > 1) {
-    return align_corners ? static_cast<scalar_t>(input_size - 1) / (output_size - 1)
-                         : static_cast<scalar_t>(input_size) / output_size;
+    return align_corners
+        ? static_cast<scalar_t>(input_size - 1) / (output_size - 1)
+        : static_cast<scalar_t>(input_size) / output_size;
   } else {
     return scalar_t(0);
   }
@@ -163,7 +160,7 @@ static inline int64_t nearest_neighbor_compute_source_index(
 
 template <typename scalar_t>
 static scalar_t upsampling_get_value_bounded(
-    scalar_t& data,
+    scalar_t* data,
     int64_t width,
     int64_t height,
     int64_t x,
