@@ -12,9 +12,12 @@ namespace {
 template <typename scalar_t>
 Tensor upsample_linear1d_out_cpu_template(
     const Tensor& input_,
-    Tensor& output,
-    int64_t output_width,
-    bool align_corners) {
+    IntArrayRef output_size,
+    bool align_corners,
+    Tensor& output) {
+
+  int64_t output_width = output_size[0];
+
   int64_t nbatch = input_.size(0);
   int64_t channels = input_.size(1);
   int64_t input_width = input_.size(2);
@@ -81,12 +84,17 @@ Tensor upsample_linear1d_out_cpu_template(
 template <typename scalar_t>
 Tensor upsample_linear1d_backward_out_cpu_template(
     const Tensor& grad_output_,
-    Tensor& grad_input,
-    int64_t nbatch,
-    int64_t channels,
-    int64_t input_width,
-    int64_t output_width,
-    bool align_corners) {
+    IntArrayRef output_size,
+    IntArrayRef input_size,
+    bool align_corners,
+    Tensor& grad_input) {
+
+  int64_t output_width = output_size[0];
+
+  int64_t nbatch = input_size[0];
+  int64_t channels = input_size[1];
+  int64_t input_width = input_size[2];
+
   upsample_1d_shape_check(
       grad_output_,
       static_cast<int64_t>(1),
@@ -147,67 +155,59 @@ Tensor upsample_linear1d_backward_out_cpu_template(
 
 Tensor upsample_linear1d_out_cpu(
     const Tensor& input,
-    Tensor& output,
-    int64_t output_width,
-    bool align_corners) {
+    IntArrayRef output_size,
+    bool align_corners,
+    Tensor& output) {
   return AT_DISPATCH_FLOATING_TYPES_AND_HALF(
       input.type(), "upsample_linear1d_out_cpu", [&] {
         return upsample_linear1d_out_cpu_template<scalar_t>(
-            input, output, output_width, align_corners);
+            input, output_size, align_corners, output);
       });
 }
 
 Tensor upsample_linear1d_cpu(
     const Tensor& input,
-    int64_t output_width,
+    IntArrayRef output_size,
     bool align_corners) {
   auto output = at::empty({0}, input.options());
   return AT_DISPATCH_FLOATING_TYPES_AND_HALF(
       input.type(), "upsample_linear1d_cpu", [&] {
         return upsample_linear1d_out_cpu_template<scalar_t>(
-            input, output, output_width, align_corners);
+            input, output_size, align_corners, output);
       });
 }
 
 Tensor upsample_linear1d_backward_out_cpu(
     const Tensor& grad_output,
-    Tensor& grad_input,
-    int64_t nbatch,
-    int64_t channels,
-    int64_t input_width,
-    int64_t output_width,
-    bool align_corners) {
+    IntArrayRef output_size,
+    IntArrayRef input_size,
+    bool align_corners,
+    Tensor& grad_input) {
   return AT_DISPATCH_FLOATING_TYPES_AND_HALF(
       grad_output.type(), "upsample_linear1d_backward_out_cpu", [&] {
         return upsample_linear1d_backward_out_cpu_template<scalar_t>(
             grad_output,
-            grad_input,
-            nbatch,
-            channels,
-            input_width,
-            output_width,
-            align_corners);
+            output_size,
+            input_size,
+            align_corners,
+            grad_input);
       });
 }
 
 Tensor upsample_linear1d_backward_cpu(
     const Tensor& grad_output,
-    int64_t nbatch,
-    int64_t channels,
-    int64_t input_width,
-    int64_t output_width,
+    IntArrayRef output_size,
+    IntArrayRef input_size,
     bool align_corners) {
   auto grad_input = at::zeros_like(grad_output);
   return AT_DISPATCH_FLOATING_TYPES_AND_HALF(
       grad_output.type(), "upsample_linear1d_backward_cpu", [&] {
         return upsample_linear1d_backward_out_cpu_template<scalar_t>(
             grad_output,
-            grad_input,
-            nbatch,
-            channels,
-            input_width,
-            output_width,
-            align_corners);
+            output_size,
+            input_size,
+            align_corners,
+            grad_input);
       });
 }
 

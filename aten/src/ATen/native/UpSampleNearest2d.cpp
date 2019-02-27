@@ -9,9 +9,11 @@ namespace {
 template <typename scalar_t>
 Tensor upsample_nearest2d_out_cpu_template(
     const Tensor& input_,
-    Tensor& output,
-    int64_t output_height,
-    int64_t output_width) {
+    IntArrayRef output_size,
+    Tensor& output) {
+  int64_t output_height = output_size[0];
+  int64_t output_width = output_size[1];
+
   int64_t nbatch = input_.size(0);
   int64_t channels = input_.size(1);
   int64_t input_height = input_.size(2);
@@ -86,13 +88,17 @@ Tensor upsample_nearest2d_out_cpu_template(
 template <typename scalar_t>
 Tensor upsample_nearest2d_backward_out_cpu_template(
     const Tensor& grad_output_,
-    Tensor& grad_input,
-    int64_t nbatch,
-    int64_t channels,
-    int64_t input_height,
-    int64_t input_width,
-    int64_t output_height,
-    int64_t output_width) {
+    IntArrayRef output_size,
+    IntArrayRef input_size,
+    Tensor& grad_input) {
+  int64_t output_height = output_size[0];
+  int64_t output_width = output_size[1];
+
+  int64_t nbatch = input_size[0];
+  int64_t channels = input_size[1];
+  int64_t input_height = input_size[2];
+  int64_t input_width = input_size[3];
+
   upsample_2d_shape_check(
       grad_output_,
       static_cast<int64_t>(1),
@@ -159,71 +165,45 @@ Tensor upsample_nearest2d_backward_out_cpu_template(
 
 Tensor upsample_nearest2d_out_cpu(
     const Tensor& input,
-    Tensor& output,
-    int64_t output_height,
-    int64_t output_width) {
+    IntArrayRef output_size,
+    Tensor& output) {
   return AT_DISPATCH_FLOATING_TYPES_AND_HALF(
       input.type(), "upsample_nearest2d_out_cpu", [&] {
         return upsample_nearest2d_out_cpu_template<scalar_t>(
-            input, output, output_height, output_width);
+            input, output_size, output);
       });
 }
 
-Tensor upsample_nearest2d_cpu(
-    const Tensor& input,
-    int64_t output_height,
-    int64_t output_width) {
+Tensor upsample_nearest2d_cpu(const Tensor& input, IntArrayRef output_size) {
   auto output = at::empty({0}, input.options());
   return AT_DISPATCH_FLOATING_TYPES_AND_HALF(
       input.type(), "upsample_nearest2d_cpu", [&] {
         return upsample_nearest2d_out_cpu_template<scalar_t>(
-            input, output, output_height, output_width);
+            input, output_size, output);
       });
 }
 
 Tensor upsample_nearest2d_backward_out_cpu(
     const Tensor& grad_output,
-    Tensor& grad_input,
-    int64_t nbatch,
-    int64_t channels,
-    int64_t input_height,
-    int64_t input_width,
-    int64_t output_height,
-    int64_t output_width) {
+    IntArrayRef output_size,
+    IntArrayRef input_size,
+    Tensor& grad_input) {
   return AT_DISPATCH_FLOATING_TYPES_AND_HALF(
       grad_output.type(), "upsample_nearest2d_backward_out_cpu", [&] {
         return upsample_nearest2d_backward_out_cpu_template<scalar_t>(
-            grad_output,
-            grad_input,
-            nbatch,
-            channels,
-            input_height,
-            input_width,
-            output_height,
-            output_width);
+            grad_output, output_size, input_size, grad_input);
       });
 }
 
 Tensor upsample_nearest2d_backward_cpu(
     const Tensor& grad_output,
-    int64_t nbatch,
-    int64_t channels,
-    int64_t input_height,
-    int64_t input_width,
-    int64_t output_height,
-    int64_t output_width) {
+    IntArrayRef input_size,
+    IntArrayRef output_size) {
   auto grad_input = at::zeros_like(grad_output);
   return AT_DISPATCH_FLOATING_TYPES_AND_HALF(
       grad_output.type(), "upsample_nearest2d_backward_cpu", [&] {
         return upsample_nearest2d_backward_out_cpu_template<scalar_t>(
-            grad_output,
-            grad_input,
-            nbatch,
-            channels,
-            input_height,
-            input_width,
-            output_height,
-            output_width);
+            grad_output, output_size, input_size, grad_input);
       });
 }
 
