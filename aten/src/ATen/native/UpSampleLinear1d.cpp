@@ -15,7 +15,6 @@ Tensor upsample_linear1d_out_cpu_template(
     IntArrayRef output_size,
     bool align_corners,
     Tensor& output) {
-
   int64_t output_width = output_size[0];
 
   int64_t nbatch = input_.size(0);
@@ -88,7 +87,6 @@ Tensor upsample_linear1d_backward_out_cpu_template(
     IntArrayRef input_size,
     bool align_corners,
     Tensor& grad_input) {
-
   int64_t output_width = output_size[0];
 
   int64_t nbatch = input_size[0];
@@ -186,11 +184,7 @@ Tensor upsample_linear1d_backward_out_cpu(
   return AT_DISPATCH_FLOATING_TYPES_AND_HALF(
       grad_output.type(), "upsample_linear1d_backward_out_cpu", [&] {
         return upsample_linear1d_backward_out_cpu_template<scalar_t>(
-            grad_output,
-            output_size,
-            input_size,
-            align_corners,
-            grad_input);
+            grad_output, output_size, input_size, align_corners, grad_input);
       });
 }
 
@@ -203,11 +197,7 @@ Tensor upsample_linear1d_backward_cpu(
   return AT_DISPATCH_FLOATING_TYPES_AND_HALF(
       grad_output.type(), "upsample_linear1d_backward_cpu", [&] {
         return upsample_linear1d_backward_out_cpu_template<scalar_t>(
-            grad_output,
-            output_size,
-            input_size,
-            align_corners,
-            grad_input);
+            grad_output, output_size, input_size, align_corners, grad_input);
       });
 }
 

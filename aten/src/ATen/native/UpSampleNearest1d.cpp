@@ -11,7 +11,6 @@ Tensor upsample_nearest1d_out_cpu_template(
     const Tensor& input_,
     IntArrayRef output_size,
     Tensor& output) {
-
   int64_t output_width = output_size[0];
 
   int64_t nbatch = input_.size(0);
@@ -77,7 +76,6 @@ Tensor upsample_nearest1d_backward_out_cpu_template(
     IntArrayRef output_size,
     IntArrayRef input_size,
     Tensor& grad_input) {
-
   int64_t output_width = output_size[0];
 
   int64_t nbatch = input_size[0];
@@ -148,9 +146,7 @@ Tensor upsample_nearest1d_out_cpu(
       });
 }
 
-Tensor upsample_nearest1d_cpu(
-    const Tensor& input,
-    IntArrayRef output_size) {
+Tensor upsample_nearest1d_cpu(const Tensor& input, IntArrayRef output_size) {
   auto output = at::empty({0}, input.options());
   return AT_DISPATCH_FLOATING_TYPES_AND_HALF(
       input.type(), "upsample_nearest1d_cpu", [&] {
@@ -167,10 +163,7 @@ Tensor upsample_nearest1d_backward_out_cpu(
   return AT_DISPATCH_FLOATING_TYPES_AND_HALF(
       grad_output.type(), "upsample_nearest1d_backward_out_cpu", [&] {
         return upsample_nearest1d_backward_out_cpu_template<scalar_t>(
-            grad_output,
-            output_size,
-            input_size,
-            grad_input);
+            grad_output, output_size, input_size, grad_input);
       });
 }
 
@@ -182,10 +175,7 @@ Tensor upsample_nearest1d_backward_cpu(
   return AT_DISPATCH_FLOATING_TYPES_AND_HALF(
       grad_output.type(), "upsample_nearest1d_backward_cpu", [&] {
         return upsample_nearest1d_backward_out_cpu_template<scalar_t>(
-            grad_output,
-            output_size,
-            input_size,
-            grad_input);
+            grad_output, output_size, input_size, grad_input);
       });
 }
 
