@@ -73,8 +73,8 @@ static void upsample_linear1d_backward_out_frame(
   if (input_width == output_width) {
     for (int64_t w2 = 0; w2 < output_width; ++w2) {
       const int64_t w1 = w2;
-      scalar_t* pos1 = &data1[w1];
-      const scalar_t* pos2 = &data2[w2];
+      scalar_t* pos1 = &idata[w1];
+      const scalar_t* pos2 = &odata[w2];
 
       for (int64_t c = 0; c < channels; ++c) {
         pos1[0] += pos2[0];
@@ -95,8 +95,8 @@ static void upsample_linear1d_backward_out_frame(
     const int64_t w1p = (w1 < input_width - 1) ? 1 : 0;
     const scalar_t w1lambda = w1r - w1;
     const scalar_t w0lambda = static_cast<scalar_t>(1.) - w1lambda;
-    scalar_t* pos1 = &data1[w1];
-    const scalar_t* pos2 = &data2[w2];
+    scalar_t* pos1 = &idata[w1];
+    const scalar_t* pos2 = &odata[w2];
 
     for (int64_t c = 0; c < channels; ++c) {
       pos1[0] += w0lambda * pos2[0];
@@ -140,8 +140,8 @@ static void upsample_linear1d_out_cpu_template(
     upsample_linear1d_out_frame<scalar_t>(
         odata,
         idata,
+        input_width,
         output_width,
-        output_height,
         nbatch,
         channels,
         align_corners);
@@ -181,8 +181,8 @@ static void upsample_linear1d_backward_out_cpu_template(
         upsample_linear1d_backward_out_frame<scalar_t>(
             odata,
             idata,
+            input_width,
             output_width,
-            output_height,
             nbatch,
             channels,
             align_corners);
@@ -204,7 +204,7 @@ Tensor upsample_linear1d_cpu(
     IntArrayRef output_size,
     bool align_corners) {
   auto output = at::empty({0}, input.options());
-  upsample_linear1d_out_cpu_template(output, input, output_size, align_corner);
+  upsample_linear1d_out_cpu_template(output, input, output_size, align_corners);
   return output;
 }
 

@@ -100,8 +100,8 @@ static void upsample_bilinear2d_backward_out_frame(
       const int64_t h1 = h2;
       for (int64_t w2 = 0; w2 < output_width; ++w2) {
         const int64_t w1 = w2;
-        scalar_t* pos1 = &data1[h1 * input_width + w1];
-        const scalar_t* pos2 = &data2[h2 * output_width + w2];
+        scalar_t* pos1 = &idata[h1 * input_width + w1];
+        const scalar_t* pos2 = &odata[h2 * output_width + w2];
 
         for (int64_t c = 0; c < channels; ++c) {
           pos1[0] += pos2[0];
@@ -138,9 +138,9 @@ static void upsample_bilinear2d_backward_out_frame(
       const scalar_t w1lambda = w1r - w1;
       const scalar_t w0lambda = static_cast<scalar_t>(1.) - w1lambda;
 
-      scalar_t* pos1 = &data1[h1 * input_width + w1];
+      scalar_t* pos1 = &idata[h1 * input_width + w1];
 
-      const scalar_t* pos2 = &data2[h2 * output_width + w2];
+      const scalar_t* pos2 = &odata[h2 * output_width + w2];
 
       for (int64_t c = 0; c < channels; ++c) {
         pos1[0] += h0lambda * w0lambda * pos2[0];
@@ -243,7 +243,7 @@ static void upsample_bilinear2d_backward_out_cpu_template(
             output_height,
             output_width,
             input_height,
-            output_height,
+            output_width,
             nbatch,
             channels,
             align_corners);
@@ -251,7 +251,7 @@ static void upsample_bilinear2d_backward_out_cpu_template(
 }
 } // namespace
 
-&Tensor upsample_bilinear2d_out_cpu(
+Tensor& upsample_bilinear2d_out_cpu(
     Tensor& output,
     const Tensor& input,
     IntArrayRef output_size,
@@ -271,7 +271,7 @@ Tensor upsample_bilinear2d_cpu(
   return output;
 }
 
-&Tensor upsample_bilinear2d_backward_out_cpu(
+Tensor& upsample_bilinear2d_backward_out_cpu(
     Tensor& grad_input,
     const Tensor& grad_output,
     IntArrayRef output_size,

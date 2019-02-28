@@ -196,10 +196,10 @@ static void upsample_bicubic2d_out_cpu_template(
     upsample_bicubic2d_out_frame<scalar_t>(
         odata,
         idata,
+        input_height,
+        input_width,
         output_height,
         output_width,
-        input_height,
-        output_height,
         nbatch,
         channels,
         align_corners);
@@ -243,10 +243,10 @@ static void upsample_bicubic2d_backward_out_cpu_template(
         upsample_bicubic2d_backward_out_frame<scalar_t>(
             odata,
             idata,
+            input_height,
+            input_width,
             output_height,
             output_width,
-            input_height,
-            output_height,
             nbatch,
             channels,
             align_corners);

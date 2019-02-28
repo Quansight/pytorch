@@ -7,7 +7,7 @@ namespace native {
 namespace {
 
 template <typename scalar_t>
-static void upsample_bicubic2d_out_frame(
+static void upsample_nearest2d_out_frame(
     scalar_t* odata,
     scalar_t* idata,
     int64_t input_height,
@@ -16,10 +16,10 @@ static void upsample_bicubic2d_out_frame(
     int64_t output_width,
     int64_t nbatch,
     int64_t channels) {
-  channels = channels * nbatch;
-
   const float height_scale = (float)input_height / (float)output_height;
   const float width_scale = (float)input_width / (float)output_width;
+
+  channels = channels * nbatch;
 
   // special case: just copy
   if (input_height == output_height && input_width == output_width) {
@@ -62,7 +62,7 @@ static void upsample_bicubic2d_out_frame(
 }
 
 template <typename scalar_t>
-static void upsample_bicubic2d_backward_out_frame(
+static void upsample_nearest2d_backward_out_frame(
     scalar_t* odata,
     scalar_t* idata,
     int64_t input_height,
@@ -71,10 +71,10 @@ static void upsample_bicubic2d_backward_out_frame(
     int64_t output_width,
     int64_t nbatch,
     int64_t channels) {
-  channels = channels * nbatch;
-
   const float height_scale = (float)input_height / (float)output_height;
   const float width_scale = (float)input_width / (float)output_width;
+
+  channels = channels * nbatch;
 
   // special case: just copy
   if (input_height == output_height && input_width == output_width) {
@@ -151,10 +151,10 @@ static void upsample_nearest2d_out_cpu_template(
     upsample_nearest2d_out_frame<scalar_t>(
         odata,
         idata,
+        input_height,
+        input_width,
         output_height,
         output_width,
-        input_height,
-        output_height,
         nbatch,
         channels);
   });
@@ -196,10 +196,10 @@ static void upsample_nearest2d_backward_out_cpu_template(
         upsample_nearest2d_backward_out_frame<scalar_t>(
             odata,
             idata,
+            input_height,
+            input_width,
             output_height,
             output_width,
-            input_height,
-            output_height,
             nbatch,
             channels);
       });
