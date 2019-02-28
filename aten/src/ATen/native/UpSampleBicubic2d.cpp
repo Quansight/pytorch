@@ -7,37 +7,16 @@ namespace native {
 namespace {
 
 template <typename scalar_t>
-Tensor upsample_bicubic2d_out_cpu_template(
-    const Tensor& input_,
-    IntArrayRef output_size,
-    bool align_corners,
-    Tensor& output) {
-  int64_t output_height = output_size[0];
-  int64_t output_width = output_size[1];
-
-  int64_t nbatch = input_.size(0);
-  int64_t channels = input_.size(1);
-  int64_t input_height = input_.size(2);
-  int64_t input_width = input_.size(3);
-
-  upsample_2d_shape_check(
-      input_,
-      static_cast<int64_t>(0),
-      nbatch,
-      channels,
-      input_height,
-      input_width,
-      output_height,
-      output_width);
-
-  auto input = input_.contiguous();
-
-  output.resize_({nbatch, channels, output_height, output_width});
-  output.zero_();
-
-  scalar_t* idata = input.data<scalar_t>();
-  scalar_t* odata = output.data<scalar_t>();
-
+static void upsample_bicubic2d_out_frame(
+    scalar_t* odata,
+    scalar_t* idata,
+    int64_t input_height,
+    int64_t input_width,
+    int64_t output_height,
+    int64_t output_width,
+    int64_t nbatch,
+    int64_t channels,
+    bool align_corners) {
   // Special case: input/output same size, just copy
   if (input_height == output_height && input_width == output_width) {
     for (int64_t output_y = 0; output_y < output_height; output_y++) {
@@ -52,7 +31,7 @@ Tensor upsample_bicubic2d_out_cpu_template(
         }
       }
     }
-    return output;
+    return;
   }
 
   // Bicubic interpolation
@@ -105,44 +84,19 @@ Tensor upsample_bicubic2d_out_cpu_template(
       }
     }
   }
-  return output;
 }
 
 template <typename scalar_t>
-Tensor upsample_bicubic2d_backward_out_cpu_template(
-    const Tensor& grad_output_,
-    IntArrayRef output_size,
-    IntArrayRef input_size,
-    bool align_corners,
-    Tensor& grad_input) {
-  int64_t output_height = output_size[0];
-  int64_t output_width = output_size[1];
-
-  int64_t nbatch = input_size[0];
-  int64_t channels = input_size[1];
-  int64_t input_height = input_size[2];
-  int64_t input_width = input_size[3];
-
-  upsample_2d_shape_check(
-      grad_output_,
-      static_cast<int64_t>(1),
-      nbatch,
-      channels,
-      input_height,
-      input_width,
-      output_height,
-      output_width);
-
-  auto grad_output = grad_output_.contiguous();
-
-  grad_input.resize_({nbatch, channels, input_height, input_width});
-  grad_input.zero_();
-
-  scalar_t* idata = grad_input.data<scalar_t>();
-  scalar_t* odata = grad_output.data<scalar_t>();
-
-  channels = channels * nbatch;
-
+static void upsample_bicubic2d_backward_out_frame(
+    scalar_t* odata,
+    scalar_t* idata,
+    int64_t input_height,
+    int64_t input_width,
+    int64_t output_height,
+    int64_t output_width,
+    int64_t nbatch,
+    int64_t channels,
+    bool align_corners) {
   // Special case: input/output same size, just copy
   if (input_height == output_height && input_width == output_width) {
     for (int64_t output_y = 0; output_y < output_height; output_y++) {
@@ -156,7 +110,7 @@ Tensor upsample_bicubic2d_backward_out_cpu_template(
         }
       }
     }
-    return grad_input;
+    return;
   }
 
   const scalar_t height_scale = linear_upsample_compute_scale<scalar_t>(
@@ -203,29 +157,111 @@ Tensor upsample_bicubic2d_backward_out_cpu_template(
       }
     }
   }
-  return grad_input;
+}
+
+static void upsample_bicubic2d_out_cpu_template(
+    Tensor& output,
+    const Tensor& input_,
+    IntArrayRef output_size,
+    bool align_corners) {
+  int64_t output_height = output_size[0];
+  int64_t output_width = output_size[1];
+
+  int64_t nbatch = input_.size(0);
+  int64_t channels = input_.size(1);
+  int64_t input_height = input_.size(2);
+  int64_t input_width = input_.size(3);
+
+  upsample_2d_shape_check(
+      input_,
+      static_cast<int64_t>(0),
+      nbatch,
+      channels,
+      input_height,
+      input_width,
+      output_height,
+      output_width);
+
+  auto input = input_.contiguous();
+
+  output.resize_({nbatch, channels, output_height, output_width});
+  output.zero_();
+
+  AT_DISPATCH_FLOATING_TYPES_AND_HALF(input.type(), "upsample_bicubic2d", [&] {
+    auto* idata = input.data<scalar_t>();
+    auto* odata = output.data<scalar_t>();
+
+    upsample_bicubic2d_out_frame<scalar_t>(
+        odata,
+        idata,
+        output_height,
+        output_width,
+        input_height,
+        output_height,
+        nbatch,
+        channels,
+        align_corners);
+  });
+}
+
+static void upsample_bicubic2d_backward_out_cpu_template(
+    Tensor& grad_input,
+    const Tensor& grad_output_,
+    IntArrayRef output_size,
+    IntArrayRef input_size,
+    bool align_corners) {
+  int64_t output_height = output_size[0];
+  int64_t output_width = output_size[1];
+
+  int64_t nbatch = input_size[0];
+  int64_t channels = input_size[1];
+  int64_t input_height = input_size[2];
+  int64_t input_width = input_size[3];
+
+  upsample_2d_shape_check(
+      grad_output_,
+      static_cast<int64_t>(1),
+      nbatch,
+      channels,
+      input_height,
+      input_width,
+      output_height,
+      output_width);
+
+  auto grad_output = grad_output_.contiguous();
+
+  grad_input.resize_({nbatch, channels, input_height, input_width});
+  grad_input.zero_();
+
+  channels = channels * nbatch;
+
+  AT_DISPATCH_FLOATING_TYPES_AND_HALF(
+      grad_output.type(), "upsample_bicubic2d_backward", [&] {
+        scalar_t* idata = grad_input.data<scalar_t>();
+        scalar_t* odata = grad_output.data<scalar_t>();
+
+        upsample_bicubic2d_backward_out_frame<scalar_t>(
+            odata,
+            idata,
+            output_height,
+            output_width,
+            input_height,
+            output_height,
+            nbatch,
+            channels,
+            align_corners);
+      });
 }
 } // namespace
 
-/*
-- func: upsample_bicubic2d(Tensor self, int[2] output_size, bool align_corners,
-*, Tensor(a!) output) -> Tensor(a!) python_module: nn dispatch: CPU:
-upsample_bicubic2d_out_cpu CUDA: upsample_bicubic2d_out_cuda
-
-- func: upsample_bicubic2d(Tensor self, int[2] output_size, bool align_corners)
--> Tensor matches_jit_signature: True python_module: nn dispatch: CPU:
-upsample_bicubic2d_cpu CUDA: upsample_bicubic2d_cuda
-*/
-Tensor upsample_bicubic2d_out_cpu(
+Tensor& upsample_bicubic2d_out_cpu(
+    Tensor& output,
     const Tensor& input,
     IntArrayRef output_size,
-    bool align_corners,
-    Tensor& output) {
-  return AT_DISPATCH_FLOATING_TYPES_AND_HALF(
-      input.type(), "upsample_bicubic2d_out_cpu", [&] {
-        return upsample_bicubic2d_out_cpu_template<scalar_t>(
-            input, output_size, align_corners, output);
-      });
+    bool align_corners) {
+  upsample_bicubic2d_out_cpu_template(
+      output, input, output_size, align_corners);
+  return output;
 }
 
 Tensor upsample_bicubic2d_cpu(
@@ -233,24 +269,20 @@ Tensor upsample_bicubic2d_cpu(
     IntArrayRef output_size,
     bool align_corners) {
   auto output = at::empty({0}, input.options());
-  return AT_DISPATCH_FLOATING_TYPES_AND_HALF(
-      input.type(), "upsample_bicubic2d_cpu", [&] {
-        return upsample_bicubic2d_out_cpu_template<scalar_t>(
-            input, output_size, align_corners, output);
-      });
+  upsample_bicubic2d_out_cpu_template(
+      output, input, output_size, align_corners);
+  return output;
 }
 
-Tensor upsample_bicubic2d_backward_out_cpu(
+Tensor& upsample_bicubic2d_backward_out_cpu(
+    Tensor& grad_input,
     const Tensor& grad_output,
     IntArrayRef output_size,
     IntArrayRef input_size,
-    bool align_corners,
-    Tensor& grad_input) {
-  return AT_DISPATCH_FLOATING_TYPES_AND_HALF(
-      grad_output.type(), "upsample_bicubic2d_backward_cpu", [&] {
-        return upsample_bicubic2d_backward_out_cpu_template<scalar_t>(
-            grad_output, output_size, input_size, align_corners, grad_input);
-      });
+    bool align_corners) {
+  upsample_bicubic2d_backward_out_cpu_template(
+      grad_input, grad_output, output_size, input_size, align_corners);
+  return grad_input;
 }
 
 Tensor upsample_bicubic2d_backward_cpu(
@@ -259,11 +291,9 @@ Tensor upsample_bicubic2d_backward_cpu(
     IntArrayRef input_size,
     bool align_corners) {
   auto grad_input = at::zeros_like(grad_output);
-  return AT_DISPATCH_FLOATING_TYPES_AND_HALF(
-      grad_output.type(), "upsample_bicubic2d_backward_cpu", [&] {
-        return upsample_bicubic2d_backward_out_cpu_template<scalar_t>(
-            grad_output, output_size, input_size, align_corners, grad_input);
-      });
+  upsample_bicubic2d_backward_out_cpu_template(
+      grad_input, grad_output, output_size, input_size, align_corners);
+  return grad_input;
 }
 
 } // namespace native
