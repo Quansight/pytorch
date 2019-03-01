@@ -6,18 +6,24 @@ namespace at {
 namespace native {
 
 static inline void check_dim_size(
-    const Tensor& input,
+    const Tensor& data,
     int64_t dim,
     int64_t dim_size,
     int64_t size) {
   /* Check dimension size of a tensor */
   AT_CHECK(
-      input.dim() != dim || input.size(dim_size) != size,
-      "Expected tensor of dimension %d and tensor.size[%d] == %d but got: "
-      "dimension %s and tensor.size[%s]",
+      data.dim() == dim && data.size(dim_size) == size,
+      "Expected tensor of dimension ",
       dim,
+      " and tensor.size[",
       dim_size,
-      size);
+      "] == ",
+      size,
+      " but got: dimension ",
+      data.dim(),
+      " and tensor.size[",
+      data.size(dim_size),
+      "]");
 }
 
 static inline void upsample_1d_shape_check(
@@ -29,19 +35,22 @@ static inline void upsample_1d_shape_check(
     int64_t output_width) {
   AT_CHECK(
       input_width > 0 && output_width > 0,
-      "input and output sizes should be greater than 0,"
-      " but got input (W: %d) output (W: %d)",
+      "Input and output sizes should be greater than 0, but got input (W: ",
       input_width,
-      output_width);
+      ") and output (W: ",
+      output_width,
+      ")");
 
   if (type_check == 0) {
     AT_CHECK(
         !data.numel() == 0 && data.dim() == 3,
-        "non-empty 3D input tensor expected but got: %s");
+        "Non-empty 3D data tensor expected but got: ",
+        data.dim(),
+        "D");
   } else if (type_check == 1) {
     check_dim_size(data, 3, 0, nbatch);
     check_dim_size(data, 3, 1, nchannels);
-    check_dim_size(data, 4, 3, output_width);
+    check_dim_size(data, 3, 2, output_width);
   }
 }
 
@@ -57,17 +66,23 @@ static inline void upsample_2d_shape_check(
   AT_CHECK(
       input_height > 0 && input_width > 0 && output_height > 0 &&
           output_width > 0,
-      "input and output sizes should be greater than 0,"
-      " but got input (H: %d, W: %d) output (H: %d, W: %d)",
+      "Input and output sizes should be greater than 0,"
+      " but got input (H: ",
       input_height,
+      ", W: ",
       input_width,
+      ") output (H: ",
       output_height,
-      output_width);
+      ", W: ",
+      output_width,
+      ")");
 
   if (type_check == 0) {
     AT_CHECK(
         !data.numel() == 0 && data.dim() == 4,
-        "non-empty 4D input tensor expected but got: %s");
+        "Non-empty 4D data tensor expected but got: ",
+        data.dim(),
+        "D");
   } else if (type_check == 1) {
     check_dim_size(data, 4, 0, nbatch);
     check_dim_size(data, 4, 1, nchannels);
@@ -90,18 +105,23 @@ static inline void upsample_3d_shape_check(
   AT_CHECK(
       input_depth > 0 && input_height > 0 && input_width > 0 &&
           output_depth > 0 && output_height > 0 && output_width > 0,
-      "input and output sizes should be greater than 0,"
-      " but got input (D: %d, H: %d, W: %d) output (D: %d, H: %d, W: %d)",
+      "Input and output sizes should be greater than 0, but got input (D: ",
       input_depth,
+      ", H: ",
       input_height,
+      ", W: ",
       input_width,
+      ") output (D: ",
       output_depth,
+      ", H: ",
       output_height,
-      output_width);
+      ", W: ",
+      output_width,
+      ")");
 
   if (type_check == 0) {
     AT_CHECK(
-        data.dim() == 5, "5D input tensor expected but got: %sD", data.dim());
+        data.dim() == 5, "5D data tensor expected but got: ", data.dim(), "D");
   } else if (type_check == 1) {
     check_dim_size(data, 5, 0, nbatch);
     check_dim_size(data, 5, 1, nchannels);
