@@ -22,8 +22,9 @@ static inline void check_dim_size(
       " but got: dimension ",
       data.dim(),
       " and tensor.size[",
-      data.size(dim_size),
-      "]");
+      dim_size,
+      "] = ",
+      data.size(dim_size));
 }
 
 static inline void upsample_1d_shape_check(
