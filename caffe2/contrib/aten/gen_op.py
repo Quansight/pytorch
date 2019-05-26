@@ -92,7 +92,10 @@ ARGUMENT_MAP = {
     'std::array<bool, 2>': 'auto ${arg} = readBoolMask<2>("${arg}");',
     'std::array<bool, 3>': 'auto ${arg} = readBoolMask<3>("${arg}");',
 }
-
+for _k in list(ARGUMENT_MAP):
+    __k = _k.replace(' ','')
+    if __k not in ARGUMENT_MAP:
+        ARGUMENT_MAP[__k] = ARGUMENT_MAP[_k]
 
 def expand(o):
     num_defaults = sum(1 if 'default' in arg else 0 for arg in o['arguments'])

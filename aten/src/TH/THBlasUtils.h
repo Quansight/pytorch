@@ -113,3 +113,72 @@ inline void THBlas_gemv(
   }
 
 AT_FORALL_SCALAR_TYPES_EXCEPT_HALF_AND_QINT(GEMV_SPECIALIZATION)
+
+/*
+  THBlas_im2col and THBlas_col2im are provided here temporarily and
+  should be removed once im2col and col2im are ported to ATen native.
+ */
+
+template<typename T>
+inline void THBlas_im2col(
+                     const T* data_im, const int64_t channels,
+                     const int64_t height, const int64_t width,
+                     const int64_t output_height, const int64_t output_width,
+                     const int64_t kernel_h, const int64_t kernel_w,
+                     const int64_t pad_h, const int64_t pad_w,
+                     const int64_t stride_h, const int64_t stride_w,
+                     const int64_t dilation_h, const int64_t dilation_w,
+                     T* data_col
+                        );
+
+#define IM2COL_SPECIALIZATION(ctype,name,_1)                            \
+  template<>                                                            \
+  inline void THBlas_im2col<ctype>(                                     \
+    const ctype* data_im, const int64_t channels,                       \
+    const int64_t height, const int64_t width,                          \
+    const int64_t output_height, const int64_t output_width,            \
+    const int64_t kernel_h, const int64_t kernel_w,                     \
+    const int64_t pad_h, const int64_t pad_w,                           \
+    const int64_t stride_h, const int64_t stride_w,                     \
+    const int64_t dilation_h, const int64_t dilation_w,                 \
+    ctype* data_col                                                     \
+                                                                        ) { \
+    TH ## name ## Blas_im2col(data_im, channels, height, width,        \
+                              output_height, output_width, kernel_h, kernel_w, \
+                              pad_h, pad_w, stride_h, stride_w, \
+                              dilation_h, dilation_w, data_col); \
+  }
+
+AT_FORALL_SCALAR_TYPES_EXCEPT_HALF_AND_QINT(IM2COL_SPECIALIZATION)
+
+template<typename T>
+inline void THBlas_col2im(
+                        const T* data_col, const int64_t channels,
+                        const int64_t height, const int64_t width,
+                        const int64_t output_height, const int64_t output_width,
+                        const int64_t kernel_h, const int64_t kernel_w,
+                        const int64_t pad_h, const int64_t pad_w,
+                        const int64_t stride_h, const int64_t stride_w,
+                        const int64_t dilation_h, const int64_t dilation_w,
+                        T* data_im
+                        );
+
+#define COL2IM_SPECIALIZATION(ctype,name,_1)                            \
+  template<>                                                            \
+  inline void THBlas_col2im<ctype>(                                       \
+                                 const ctype* data_col, const int64_t channels, \
+                                 const int64_t height, const int64_t width, \
+                                 const int64_t output_height, const int64_t output_width, \
+                                 const int64_t kernel_h, const int64_t kernel_w, \
+                                 const int64_t pad_h, const int64_t pad_w, \
+                                 const int64_t stride_h, const int64_t stride_w, \
+                                 const int64_t dilation_h, const int64_t dilation_w, \
+                                 ctype* data_im                         \
+                                                                        ) { \
+    TH ## name ## Blas_col2im(data_col, channels, height, width,        \
+                              output_height, output_width, kernel_h, kernel_w, \
+                              pad_h, pad_w, stride_h, stride_w, \
+                              dilation_h, dilation_w, data_im); \
+  }
+
+AT_FORALL_SCALAR_TYPES_EXCEPT_HALF_AND_QINT(COL2IM_SPECIALIZATION)

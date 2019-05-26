@@ -37,6 +37,68 @@ TH_EXTERNC void sger_(int *m, int *n, float *alpha, float *x, int *incx, float *
 TH_EXTERNC void dgemm_(char *transa, char *transb, int *m, int *n, int *k, double *alpha, double *a, int *lda, double *b, int *ldb, double *beta, double *c, int *ldc);
 TH_EXTERNC void sgemm_(char *transa, char *transb, int *m, int *n, int *k, float *alpha, float *a, int *lda, float *b, int *ldb, float *beta, float *c, int *ldc);
 
+/*
+  THBlas_im2col and THBlas_col2im are provided here temporarily and
+  should be removed once im2col and col2im are ported to ATen native.
+ */
+
+void THBlas_(im2col)(
+                     const scalar_t* data_im, const int64_t channels,
+                     const int64_t height, const int64_t width,
+                     const int64_t output_height, const int64_t output_width,
+                     const int64_t kernel_h, const int64_t kernel_w,
+                     const int64_t pad_h, const int64_t pad_w,
+                     const int64_t stride_h, const int64_t stride_w,
+                     const int64_t dilation_h, const int64_t dilation_w,
+                     scalar_t* data_col
+                     ) {
+  const int64_t height_col = output_height;
+  const int64_t width_col = output_width;
+  const int64_t channels_col = channels * kernel_h * kernel_w;
+  for (int64_t c_col = 0; c_col < channels_col; ++c_col) {
+    int64_t w_offset = c_col % kernel_w;
+    int64_t h_offset = (c_col / kernel_w) % kernel_h;
+    int64_t c_im = c_col / kernel_h / kernel_w;
+    for (int64_t h_col = 0; h_col < height_col; ++h_col) {
+      int64_t h_im = h_col * stride_h - pad_h + h_offset * dilation_h;
+      for (int64_t w_col = 0; w_col < width_col; ++w_col) {
+        int64_t w_im = w_col * stride_w - pad_w + w_offset * dilation_w;
+        data_col[(c_col * height_col + h_col) * width_col + w_col] =
+          (h_im >= 0 && w_im >= 0 && h_im < height && w_im < width) ?
+          data_im[(c_im * height + h_im) * width + w_im] : 0;
+      }
+    }
+  }
+}
+
+void THBlas_(col2im)(
+                   const scalar_t* data_col, const int64_t channels,
+      const int64_t height, const int64_t width,
+      const int64_t output_height, const int64_t output_width,
+      const int64_t kernel_h, const int64_t kernel_w,
+      const int64_t pad_h, const int64_t pad_w,
+      const int64_t stride_h, const int64_t stride_w,
+      const int64_t dilation_h, const int64_t dilation_w,
+      scalar_t* data_im) {
+  memset(data_im, 0, sizeof(scalar_t) * height * width * channels);
+  const int64_t height_col = output_height;
+  const int64_t width_col = output_width;
+  const int64_t channels_col = channels * kernel_h * kernel_w;
+  for (int64_t c_col = 0; c_col < channels_col; ++c_col) {
+    int64_t w_offset = c_col % kernel_w;
+    int64_t h_offset = (c_col / kernel_w) % kernel_h;
+    int64_t c_im = c_col / kernel_h / kernel_w;
+    for (int64_t h_col = 0; h_col < height_col; ++h_col) {
+      int64_t h_im = h_col * stride_h - pad_h + h_offset * dilation_h;
+      for (int64_t w_col = 0; w_col < width_col; ++w_col) {
+        int64_t w_im = w_col * stride_w - pad_w + w_offset * dilation_w;
+        if (h_im >= 0 && h_im < height && w_im >= 0 && w_im < width)
+          data_im[(c_im * height + h_im) * width + w_im] +=
+            data_col[(c_col * height_col + h_col) * width_col + w_col];
+      }
+    }
+  }
+}
 
 
 void THBlas_(swap)(int64_t n, scalar_t *x, int64_t incx, scalar_t *y, int64_t incy)
