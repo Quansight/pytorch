@@ -5,11 +5,6 @@
 #include "ATen/ATen.h"
 #include "TH/THBlasUtils.h"
 
-// TODO: remove after rebase
-#ifndef TORCH_CHECK
-#define TORCH_CHECK AT_CHECK
-#endif
-
 #define TORCH_CHECK_DIM_SIZE(T, DIM, DIM_SIZE, SIZE) \
   TORCH_CHECK(                                       \
       T.dim() == DIM && T.size(DIM_SIZE) == SIZE,    \
