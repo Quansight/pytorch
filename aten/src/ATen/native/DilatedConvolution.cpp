@@ -203,42 +203,16 @@
       columns,                           \
       ones)
 
-#define INSERT_BATCH_DIMENSION(A, DIM)                                             \
-  {                                                                                \
-    if (A.numel() > 0) {                                                           \
-      switch (A.dim()) {                                                           \
-        case 3:                                                                    \
-          A.resize_({DIM, A.size(0), A.size(1), A.size(2)});                       \
-          break;                                                                   \
-        case 4:                                                                    \
-          A.resize_({DIM, A.size(0), A.size(1), A.size(2), A.size(3)});            \
-          break;                                                                   \
-        default:                                                                   \
-          TORCH_CHECK(                                                             \
-              false,                                                               \
-              "Unexpected tensor dimensionality when inserting batch dimension: ", \
-              A.dim());                                                            \
-      }                                                                            \
-    }                                                                              \
+#define INSERT_BATCH_DIMENSION(A, SIZE)        \
+  if (A.numel() > 0) {                         \
+    auto new_sizes = A.sizes().vec();          \
+    new_sizes.insert(new_sizes.begin(), SIZE); \
+    A.resize_(new_sizes);                      \
   }
 
-#define DROP_BATCH_DIMENSION(A)                                                  \
-  {                                                                              \
-    if (A.numel() > 0) {                                                         \
-      switch (A.dim()) {                                                         \
-        case 3:                                                                  \
-          A.resize_({A.size(1), A.size(2), A.size(3)});                          \
-          break;                                                                 \
-        case 4:                                                                  \
-          A.resize_({A.size(1), A.size(2), A.size(3), A.size(4)});               \
-          break;                                                                 \
-        default:                                                                 \
-          TORCH_CHECK(                                                           \
-              false,                                                             \
-              "Unexpected tensor dimensionality when droping batch dimension: ", \
-              A.dim());                                                          \
-      }                                                                          \
-    }                                                                            \
+#define DROP_BATCH_DIMENSION(A)    \
+  if (A.numel() > 0) {             \
+    A.resize_(A.sizes().slice(1)); \
   }
 
 namespace at {
@@ -341,8 +315,9 @@ void conv_dilated_shape_check(
     }
   }
 
-  // since check shape is called after adding batch dimension, we
-  // always have input.dim()==dim+2.
+  // Since check shape is called after adding batch dimension, we
+  // always have input.dim()==dim+2 and what follows could be
+  // simplified..
   int ndim = input.dim();
   int dimf = 0;
   int dimd = dim - 2;
