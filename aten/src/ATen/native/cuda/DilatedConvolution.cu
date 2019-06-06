@@ -3,7 +3,14 @@
 #include <algorithm>
 #include <tuple>
 #include "ATen/ATen.h"
-#include "TH/THBlasUtils.h"
+
+#include <ATen/cuda/CUDABlas.h>
+#include <ATen/cuda/CUDAContext.h>
+#include <THC/THCGeneral.h>
+#include <ATen/cuda/CUDAApplyUtils.cuh>
+#include <THC/THCNumerics.cuh>
+#include "THCUNN/im2col.h"
+#include "THCUNN/vol2col.h"
 
 #define TORCH_CHECK_DIM_SIZE(T, DIM, DIM_SIZE, SIZE) \
   TORCH_CHECK(                                       \
@@ -17,35 +24,60 @@
       " but got input to be of shape ",              \
       T.sizes())
 
+#define CALLGEMM(TA, TB, ALPHA, A, N, B, M, BETA, C) \
+  {                                                  \
+    auto* A##_ptr = A.data<scalar_t>();              \
+    auto* B##_ptr = B.data<scalar_t>();              \
+    auto* C##_ptr = C.data<scalar_t>();              \
+    at::cuda::blas::gemm<scalar_t>(                  \
+        stream,                                      \
+        CUBLAS_OP_##TA,                              \
+        CUBLAS_OP_##TB,                              \
+        n,                                           \
+        m,                                           \
+        k,                                           \
+        ALPHA,                                       \
+        A##_ptr,                                     \
+        N,                                           \
+        B##_ptr,                                     \
+        M,                                           \
+        BETA,                                        \
+        C##_ptr,                                     \
+        n);                                          \
+  }
+
+#define CALLGEMV(TA, ALPHA, A, K, X, BETA, Y) \
+  {                                           \
+    auto* A##_ptr = A.data<scalar_t>();       \
+    auto* X##_ptr = X.data<scalar_t>();       \
+    auto* Y##_ptr = Y.data<scalar_t>();       \
+    at::cuda::blas::gemv<scalar_t>(           \
+        stream,                               \
+        CUBLAS_OP_##TA,                       \
+        m,                                    \
+        n,                                    \
+        ALPHA,                                \
+        A##_ptr,                              \
+        K,                                    \
+        X##_ptr,                              \
+        1,                                    \
+        BETA,                                 \
+        Y##_ptr,                              \
+        1);                                   \
+  }
+
 /*
   The following CALL... macros are for convenience of this source file
   only. These should be replaced with ATen native functions as soon as
   col2im, im2col, gemm, and gemv are ported.
  */
 
-#define CALLGEMM(TA, TB, ALPHA, A, N, B, M, BETA, C)                       \
-  {                                                                        \
-    auto* A##_ptr = A.data<scalar_t>();                                    \
-    auto* B##_ptr = B.data<scalar_t>();                                    \
-    auto* C##_ptr = C.data<scalar_t>();                                    \
-    THBlas_gemm<scalar_t>(                                                 \
-        TA, TB, n, m, k, ALPHA, A##_ptr, N, B##_ptr, M, BETA, C##_ptr, n); \
-  }
-
-#define CALLGEMV(TA, ALPHA, A, K, X, BETA, Y)                       \
-  {                                                                 \
-    auto* A##_ptr = A.data<scalar_t>();                             \
-    auto* X##_ptr = X.data<scalar_t>();                             \
-    auto* Y##_ptr = Y.data<scalar_t>();                             \
-    THBlas_gemv<scalar_t>(                                          \
-        TA, m, n, ALPHA, A##_ptr, K, X##_ptr, 1, BETA, Y##_ptr, 1); \
-  }
-
 #define CALLIM2COL(IM, COL)                 \
   {                                         \
     auto* COL##_ptr = COL.data<scalar_t>(); \
     auto* IM##_ptr = IM.data<scalar_t>();   \
-    THBlas_im2col<scalar_t>(                \
+    im2col<scalar_t>(                       \
+        stream,                             \
         IM##_ptr,                           \
         nInputPlane,                        \
         inputHeight,                        \
@@ -63,144 +95,147 @@
         COL##_ptr);                         \
   }
 
-#define CALLCOL2IM(COL, IM)                 \
-  {                                         \
-    auto* COL##_ptr = COL.data<scalar_t>(); \
-    auto* IM##_ptr = IM.data<scalar_t>();   \
-    THBlas_col2im<scalar_t>(                \
-        COL##_ptr,                          \
-        nInputPlane,                        \
-        inputHeight,                        \
-        inputWidth,                         \
-        outputHeight,                       \
-        outputWidth,                        \
-        kH,                                 \
-        kW,                                 \
-        padH,                               \
-        padW,                               \
-        dH,                                 \
-        dW,                                 \
-        dilationH,                          \
-        dilationW,                          \
-        IM##_ptr);                          \
+#define CALLCOL2IM(COL, IM)                       \
+  {                                               \
+    const auto* COL##_ptr = COL.data<scalar_t>(); \
+    auto* IM##_ptr = IM.data<scalar_t>();         \
+    col2im<scalar_t, scalar_t>(                   \
+        stream,                                   \
+        COL##_ptr,                                \
+        nInputPlane,                              \
+        inputHeight,                              \
+        inputWidth,                               \
+        outputHeight,                             \
+        outputWidth,                              \
+        kH,                                       \
+        kW,                                       \
+        padH,                                     \
+        padW,                                     \
+        dH,                                       \
+        dW,                                       \
+        dilationH,                                \
+        dilationW,                                \
+        IM##_ptr);                                \
   }
 
-#define CALLVOL2COL(IM, COL)                \
-  {                                         \
-    auto* COL##_ptr = COL.data<scalar_t>(); \
-    auto* IM##_ptr = IM.data<scalar_t>();   \
-    THBlas_vol2col<scalar_t>(               \
-        IM##_ptr,                           \
-        nInputPlane,                        \
-        inputDepth,                         \
-        inputHeight,                        \
-        inputWidth,                         \
-        outputDepth,                        \
-        outputHeight,                       \
-        outputWidth,                        \
-        kD,                                 \
-        kH,                                 \
-        kW,                                 \
-        padD,                               \
-        padH,                               \
-        padW,                               \
-        dD,                                 \
-        dH,                                 \
-        dW,                                 \
-        dilationD,                          \
-        dilationH,                          \
-        dilationW,                          \
-        COL##_ptr);                         \
+#define CALLVOL2COL(VOL, COL)                     \
+  {                                               \
+    auto* COL##_ptr = COL.data<scalar_t>();       \
+    const auto* VOL##_ptr = VOL.data<scalar_t>(); \
+    vol2col<scalar_t>(                            \
+        stream,                                   \
+        VOL##_ptr,                                \
+        nInputPlane,                              \
+        inputDepth,                               \
+        inputHeight,                              \
+        inputWidth,                               \
+        outputDepth,                              \
+        outputHeight,                             \
+        outputWidth,                              \
+        kD,                                       \
+        kH,                                       \
+        kW,                                       \
+        padD,                                     \
+        padH,                                     \
+        padW,                                     \
+        dD,                                       \
+        dH,                                       \
+        dW,                                       \
+        dilationD,                                \
+        dilationH,                                \
+        dilationW,                                \
+        COL##_ptr);                               \
   }
 
-#define CALLCOL2VOL(COL, IM)                \
-  {                                         \
-    auto* COL##_ptr = COL.data<scalar_t>(); \
-    auto* IM##_ptr = IM.data<scalar_t>();   \
-    THBlas_col2vol<scalar_t>(               \
-        COL##_ptr,                          \
-        nInputPlane,                        \
-        inputDepth,                         \
-        inputHeight,                        \
-        inputWidth,                         \
-        outputDepth,                        \
-        outputHeight,                       \
-        outputWidth,                        \
-        kD,                                 \
-        kH,                                 \
-        kW,                                 \
-        padD,                               \
-        padH,                               \
-        padW,                               \
-        dD,                                 \
-        dH,                                 \
-        dW,                                 \
-        dilationD,                          \
-        dilationH,                          \
-        dilationW,                          \
-        IM##_ptr);                          \
+#define CALLCOL2VOL(COL, VOL)                     \
+  {                                               \
+    const auto* COL##_ptr = COL.data<scalar_t>(); \
+    auto* VOL##_ptr = VOL.data<scalar_t>();       \
+    col2vol<scalar_t, scalar_t>(                  \
+        stream,                                   \
+        COL##_ptr,                                \
+        nInputPlane,                              \
+        inputDepth,                               \
+        inputHeight,                              \
+        inputWidth,                               \
+        outputDepth,                              \
+        outputHeight,                             \
+        outputWidth,                              \
+        kD,                                       \
+        kH,                                       \
+        kW,                                       \
+        padD,                                     \
+        padH,                                     \
+        padW,                                     \
+        dD,                                       \
+        dH,                                       \
+        dW,                                       \
+        dilationD,                                \
+        dilationH,                                \
+        dilationW,                                \
+        VOL##_ptr);                               \
   }
 
 /*
   Some convenience macros
  */
 
-#define CALL_TEMPLATE(DIM)               \
-  conv_dilated##DIM##d_all_cpu_template( \
-      output,                            \
-      input,                             \
-      weight,                            \
-      bias,                              \
-      grad_output,                       \
-      grad_input,                        \
-      grad_weight,                       \
-      grad_bias,                         \
-      kernel_size,                       \
-      stride_size,                       \
-      pad_size,                          \
-      dilation_size,                     \
-      columns,                           \
+#define CALL_TEMPLATE(DIM)                \
+  conv_dilated##DIM##d_all_cuda_template( \
+      output,                             \
+      input,                              \
+      weight,                             \
+      bias,                               \
+      grad_output,                        \
+      grad_input,                         \
+      grad_weight,                        \
+      grad_bias,                          \
+      kernel_size,                        \
+      stride_size,                        \
+      pad_size,                           \
+      dilation_size,                      \
+      columns,                            \
       ones)
 
-#define CALL_OUT(DIM)           \
-  conv_dilated##DIM##d_out_cpu( \
-      output,                   \
-      columns,                  \
-      ones,                     \
-      input,                    \
-      weight,                   \
-      kernel_size,              \
-      bias,                     \
-      stride_size,              \
-      pad_size,                 \
+#define CALL_OUT(DIM)            \
+  conv_dilated##DIM##d_out_cuda( \
+      output,                    \
+      columns,                   \
+      ones,                      \
+      input,                     \
+      weight,                    \
+      kernel_size,               \
+      bias,                      \
+      stride_size,               \
+      pad_size,                  \
       dilation_size)
 
-#define CALL_FORWARD_OUT(DIM)           \
-  conv_dilated##DIM##d_forward_out_cpu( \
-      output,                           \
-      columns,                          \
-      ones,                             \
-      input,                            \
-      weight,                           \
-      kernel_size,                      \
-      bias,                             \
-      stride_size,                      \
-      pad_size,                         \
-      dilation_size)
-
-#define CALL_BACKWARD_OUT(DIM)           \
-  conv_dilated##DIM##d_backward_out_cpu( \
-      grad_input,                        \
-      grad_weight,                       \
-      grad_bias,                         \
-      grad_output,                       \
+#define CALL_FORWARD_OUT(DIM)            \
+  conv_dilated##DIM##d_forward_out_cuda( \
+      output,                            \
+      columns,                           \
+      ones,                              \
       input,                             \
       weight,                            \
       kernel_size,                       \
+      bias,                              \
       stride_size,                       \
       pad_size,                          \
-      dilation_size,                     \
-      columns,                           \
+      dilation_size)
+
+#define CALL_BACKWARD_OUT(DIM)            \
+  conv_dilated##DIM##d_backward_out_cuda( \
+      grad_input,                         \
+      grad_weight,                        \
+      grad_bias,                          \
+      grad_output,                        \
+      input,                              \
+      weight,                             \
+      kernel_size,                        \
+      stride_size,                        \
+      pad_size,                           \
+      dilation_size,                      \
+      columns,                            \
       ones)
 
 #define INSERT_BATCH_DIMENSION(A, SIZE)        \
@@ -434,12 +469,12 @@ void conv_dilated_shape_check(
 } // conv_dilated_shape_check
 
 /*
-  conv_dilated2d_all_cpu_template
+  conv_dilated2d_all_cuda_template
 
   Main worker. Computes tensors output, grad_input, grad_weight,
   and/or grad_bias if non-empty.
  */
-void conv_dilated2d_all_cpu_template(
+void conv_dilated2d_all_cuda_template(
     Tensor& output,
     const Tensor& input_,
     const Tensor& weight_,
@@ -454,6 +489,7 @@ void conv_dilated2d_all_cpu_template(
     IntArrayRef dilation_size,
     const Tensor& columns_,
     const Tensor& ones_) {
+  cudaStream_t stream = at::cuda::getCurrentCUDAStream();
   auto input = input_.contiguous();
   auto weight = weight_.contiguous();
   auto bias = bias_.contiguous();
@@ -526,67 +562,68 @@ void conv_dilated2d_all_cpu_template(
   Tensor grad_input_n = at::empty({0}, options);
   Tensor grad_output_n = at::empty({0}, options);
 
-  AT_DISPATCH_FLOATING_TYPES(input.scalar_type(), "conv_dilated2d", [&] {
-    // For each elt in batch, do:
-    for (int elt = 0; elt < batchSize; elt++) {
-      // Matrix multiply per output:
-      input_n = input.select(0, elt);
+  AT_DISPATCH_FLOATING_TYPES_AND_HALF(
+      input.scalar_type(), "conv_dilated2d", [&] {
+        // For each elt in batch, do:
+        for (int elt = 0; elt < batchSize; elt++) {
+          // Matrix multiply per output:
+          input_n = input.select(0, elt);
 
-      // Output
-      if (output.numel() > 0) {
-        output_n = output.select(0, elt);
-        if (bias.numel() > 0) {
-          int64_t n = outputHeight * outputWidth;
-          int64_t m = nOutputPlane;
-          int64_t k = 1;
-          CALLGEMM('t', 'n', 1, ones, k, bias, k, 0, output_n);
-        } else {
-          output_n.zero_();
+          // Output
+          if (output.numel() > 0) {
+            output_n = output.select(0, elt);
+            if (bias.numel() > 0) {
+              int64_t n = outputHeight * outputWidth;
+              int64_t m = nOutputPlane;
+              int64_t k = 1;
+              CALLGEMM(T, N, 1, ones, k, bias, k, 0, output_n);
+            } else {
+              output_n.zero_();
+            }
+            // Extract columns:
+            CALLIM2COL(input_n, columns);
+            {
+              int64_t n = outputHeight * outputWidth;
+              int64_t m = nOutputPlane;
+              int64_t k = nInputPlane * kH * kW;
+              CALLGEMM(N, N, 1, columns, n, weight, k, 1, output_n);
+            }
+          } else {
+            // All gradients
+            grad_output_n = grad_output.select(0, elt);
+          }
+
+          // Gradient of input:
+          if (grad_input.numel() > 0) {
+            int64_t n = columns.size(1);
+            int64_t m = nInputPlane * kW * kH;
+            int64_t k = nOutputPlane;
+            CALLGEMM(N, T, 1, grad_output_n, n, weight, m, 0, columns);
+            // Unpack columns back into input:
+            grad_input_n = grad_input.select(0, elt);
+            CALLCOL2IM(columns, grad_input_n);
+          }
+
+          // Gradient of weight:
+          if (grad_weight.numel() > 0) {
+            int64_t n = nInputPlane * kW * kH;
+            int64_t m = nOutputPlane;
+            int64_t k = columns.size(1);
+            scalar_t scale = 1; // TODO: expose as argument
+            // Extract columns:
+            CALLIM2COL(input_n, columns);
+            CALLGEMM(T, N, scale, columns, k, grad_output_n, k, 1, grad_weight);
+          }
+
+          // Gradient of bias:
+          if (grad_bias.numel() > 0) {
+            int64_t m = outputHeight * outputWidth;
+            int64_t n = nOutputPlane;
+            scalar_t scale = 1; // TODO: expose as argument
+            CALLGEMV(T, scale, grad_output_n, m, ones, 1, grad_bias);
+          }
         }
-        // Extract columns:
-        CALLIM2COL(input_n, columns);
-        {
-          int64_t n = outputHeight * outputWidth;
-          int64_t m = nOutputPlane;
-          int64_t k = nInputPlane * kH * kW;
-          CALLGEMM('n', 'n', 1, columns, n, weight, k, 1, output_n);
-        }
-      } else {
-        // All gradients
-        grad_output_n = grad_output.select(0, elt);
-      }
-
-      // Gradient of input:
-      if (grad_input.numel() > 0) {
-        int64_t n = columns.size(1);
-        int64_t m = nInputPlane * kW * kH;
-        int64_t k = nOutputPlane;
-        CALLGEMM('n', 't', 1, grad_output_n, n, weight, m, 0, columns);
-        // Unpack columns back into input:
-        grad_input_n = grad_input.select(0, elt);
-        CALLCOL2IM(columns, grad_input_n);
-      }
-
-      // Gradient of weight:
-      if (grad_weight.numel() > 0) {
-        int64_t n = nInputPlane * kW * kH;
-        int64_t m = nOutputPlane;
-        int64_t k = columns.size(1);
-        scalar_t scale = 1; // TODO: expose as argument
-        // Extract columns:
-        CALLIM2COL(input_n, columns);
-        CALLGEMM('t', 'n', scale, columns, k, grad_output_n, k, 1, grad_weight);
-      }
-
-      // Gradient of bias:
-      if (grad_bias.numel() > 0) {
-        int64_t m = outputHeight * outputWidth;
-        int64_t n = nOutputPlane;
-        scalar_t scale = 1; // TODO: expose as argument
-        CALLGEMV('t', scale, grad_output_n, m, ones, 1, grad_bias);
-      }
-    }
-  });
+      });
   if (is_batch) {
     DROP_BATCH_DIMENSION(input);
     DROP_BATCH_DIMENSION(output);
@@ -594,9 +631,9 @@ void conv_dilated2d_all_cpu_template(
     DROP_BATCH_DIMENSION(grad_output);
   }
 
-} // conv_dilated2d_all_cpu_template
+} // conv_dilated2d_all_cuda_template
 
-void conv_dilated3d_all_cpu_template(
+void conv_dilated3d_all_cuda_template(
     Tensor& output,
     const Tensor& input_,
     const Tensor& weight_,
@@ -611,6 +648,7 @@ void conv_dilated3d_all_cpu_template(
     IntArrayRef dilation_size,
     const Tensor& columns_,
     const Tensor& ones_) {
+  cudaStream_t stream = at::cuda::getCurrentCUDAStream();
   auto input = input_.contiguous();
   auto weight = weight_.contiguous();
   auto bias = bias_.contiguous();
@@ -690,67 +728,68 @@ void conv_dilated3d_all_cpu_template(
   Tensor grad_input_n = at::empty({0}, options);
   Tensor grad_output_n = at::empty({0}, options);
 
-  AT_DISPATCH_FLOATING_TYPES(input.scalar_type(), "conv_dilated3d", [&] {
-    // For each elt in batch, do:
-    for (int elt = 0; elt < batchSize; elt++) {
-      // Matrix multiply per output:
-      input_n = input.select(0, elt);
+  AT_DISPATCH_FLOATING_TYPES_AND_HALF(
+      input.scalar_type(), "conv_dilated3d", [&] {
+        // For each elt in batch, do:
+        for (int elt = 0; elt < batchSize; elt++) {
+          // Matrix multiply per output:
+          input_n = input.select(0, elt);
 
-      // Output
-      if (output.numel() > 0) {
-        output_n = output.select(0, elt);
-        if (bias.numel() > 0) {
-          int64_t n = outputDepth * outputHeight * outputWidth;
-          int64_t m = nOutputPlane;
-          int64_t k = 1;
-          CALLGEMM('t', 'n', 1, ones, k, bias, k, 0, output_n);
-        } else {
-          output_n.zero_();
+          // Output
+          if (output.numel() > 0) {
+            output_n = output.select(0, elt);
+            if (bias.numel() > 0) {
+              int64_t n = outputDepth * outputHeight * outputWidth;
+              int64_t m = nOutputPlane;
+              int64_t k = 1;
+              CALLGEMM(T, N, 1, ones, k, bias, k, 0, output_n);
+            } else {
+              output_n.zero_();
+            }
+            // Extract columns:
+            CALLVOL2COL(input_n, columns);
+            {
+              int64_t n = outputDepth * outputHeight * outputWidth;
+              int64_t m = nOutputPlane;
+              int64_t k = nInputPlane * kD * kH * kW;
+              CALLGEMM(N, N, 1, columns, n, weight, k, 1, output_n);
+            }
+          } else {
+            // All gradients
+            grad_output_n = grad_output.select(0, elt);
+          }
+
+          // Gradient of input:
+          if (grad_input.numel() > 0) {
+            int64_t n = columns.size(1);
+            int64_t m = nInputPlane * kW * kH * kD;
+            int64_t k = nOutputPlane;
+            CALLGEMM(N, T, 1, grad_output_n, n, weight, m, 0, columns);
+            // Unpack columns back into input:
+            grad_input_n = grad_input.select(0, elt);
+            CALLCOL2VOL(columns, grad_input_n);
+          }
+
+          // Gradient of weight:
+          if (grad_weight.numel() > 0) {
+            int64_t n = nInputPlane * kW * kH * kD;
+            int64_t m = nOutputPlane;
+            int64_t k = columns.size(1);
+            scalar_t scale = 1; // TODO: expose as argument
+            // Extract columns:
+            CALLVOL2COL(input_n, columns);
+            CALLGEMM(T, N, scale, columns, k, grad_output_n, k, 1, grad_weight);
+          }
+
+          // Gradient of bias:
+          if (grad_bias.numel() > 0) {
+            int64_t m = outputDepth * outputHeight * outputWidth;
+            int64_t n = nOutputPlane;
+            scalar_t scale = 1; // TODO: expose as argument
+            CALLGEMV(T, scale, grad_output_n, m, ones, 1, grad_bias);
+          }
         }
-        // Extract columns:
-        CALLVOL2COL(input_n, columns);
-        {
-          int64_t n = outputDepth * outputHeight * outputWidth;
-          int64_t m = nOutputPlane;
-          int64_t k = nInputPlane * kD * kH * kW;
-          CALLGEMM('n', 'n', 1, columns, n, weight, k, 1, output_n);
-        }
-      } else {
-        // All gradients
-        grad_output_n = grad_output.select(0, elt);
-      }
-
-      // Gradient of input:
-      if (grad_input.numel() > 0) {
-        int64_t n = columns.size(1);
-        int64_t m = nInputPlane * kW * kH * kD;
-        int64_t k = nOutputPlane;
-        CALLGEMM('n', 't', 1, grad_output_n, n, weight, m, 0, columns);
-        // Unpack columns back into input:
-        grad_input_n = grad_input.select(0, elt);
-        CALLCOL2VOL(columns, grad_input_n);
-      }
-
-      // Gradient of weight:
-      if (grad_weight.numel() > 0) {
-        int64_t n = nInputPlane * kW * kH * kD;
-        int64_t m = nOutputPlane;
-        int64_t k = columns.size(1);
-        scalar_t scale = 1; // TODO: expose as argument
-        // Extract columns:
-        CALLVOL2COL(input_n, columns);
-        CALLGEMM('t', 'n', scale, columns, k, grad_output_n, k, 1, grad_weight);
-      }
-
-      // Gradient of bias:
-      if (grad_bias.numel() > 0) {
-        int64_t m = outputDepth * outputHeight * outputWidth;
-        int64_t n = nOutputPlane;
-        scalar_t scale = 1; // TODO: expose as argument
-        CALLGEMV('t', scale, grad_output_n, m, ones, 1, grad_bias);
-      }
-    }
-  });
+      });
   if (is_batch) {
     DROP_BATCH_DIMENSION(input);
     DROP_BATCH_DIMENSION(output);
@@ -758,11 +797,11 @@ void conv_dilated3d_all_cpu_template(
     DROP_BATCH_DIMENSION(grad_output);
   }
 
-} // conv_dilated3d_all_cpu_template
+} // conv_dilated3d_all_cuda_template
 
 } // namespace
 
-std::tuple<Tensor&, Tensor&, Tensor&> conv_dilated2d_out_cpu(
+std::tuple<Tensor&, Tensor&, Tensor&> conv_dilated2d_out_cuda(
     Tensor& output,
     Tensor& columns,
     Tensor& ones,
@@ -789,7 +828,7 @@ std::tuple<Tensor&, Tensor&, Tensor&> conv_dilated2d_out_cpu(
   return std::tie(output, columns, ones);
 }
 
-Tensor& conv_dilated2d_out_cpu(
+Tensor& conv_dilated2d_out_cuda(
     Tensor& output,
     const Tensor& input,
     const Tensor& weight,
@@ -805,7 +844,7 @@ Tensor& conv_dilated2d_out_cpu(
   return output;
 }
 
-Tensor conv_dilated2d_cpu(
+Tensor conv_dilated2d_cuda(
     const Tensor& input,
     const Tensor& weight,
     IntArrayRef kernel_size,
@@ -821,7 +860,7 @@ Tensor conv_dilated2d_cpu(
   return output;
 }
 
-std::tuple<Tensor&, Tensor&, Tensor&> conv_dilated2d_forward_out_cpu(
+std::tuple<Tensor&, Tensor&, Tensor&> conv_dilated2d_forward_out_cuda(
     Tensor& output,
     Tensor& columns,
     Tensor& ones,
@@ -832,12 +871,12 @@ std::tuple<Tensor&, Tensor&, Tensor&> conv_dilated2d_forward_out_cpu(
     IntArrayRef stride_size,
     IntArrayRef pad_size,
     IntArrayRef dilation_size) {
-  std::cout << "NOT IMPLEMENTED: conv_dilated2d_forward_out_cpu3" << std::endl;
+  std::cout << "NOT IMPLEMENTED: conv_dilated2d_forward_out_cuda3" << std::endl;
   CALL_OUT(2); // Is this correct??
   return std::tie(output, columns, ones);
 }
 
-Tensor& conv_dilated2d_forward_out_cpu(
+Tensor& conv_dilated2d_forward_out_cuda(
     Tensor& output,
     const Tensor& input,
     const Tensor& weight,
@@ -849,12 +888,12 @@ Tensor& conv_dilated2d_forward_out_cpu(
   auto options = output.options();
   Tensor columns = at::empty({0}, options);
   Tensor ones = at::empty({0}, options);
-  std::cout << "NOT IMPLEMENTED: conv_dilated2d_forward_out_cpu1" << std::endl;
+  std::cout << "NOT IMPLEMENTED: conv_dilated2d_forward_out_cuda1" << std::endl;
   CALL_FORWARD_OUT(2);
   return output;
 }
 
-std::tuple<Tensor, Tensor, Tensor> conv_dilated2d_forward_cpu(
+std::tuple<Tensor, Tensor, Tensor> conv_dilated2d_forward_cuda(
     const Tensor& input,
     const Tensor& weight,
     IntArrayRef kernel_size,
@@ -866,12 +905,12 @@ std::tuple<Tensor, Tensor, Tensor> conv_dilated2d_forward_cpu(
   Tensor output = at::empty({0}, options);
   Tensor columns = at::empty({0}, options);
   Tensor ones = at::empty({0}, options);
-  std::cout << "NOT IMPLEMENTED: conv_dilated2d_forward_cpu" << std::endl;
+  std::cout << "NOT IMPLEMENTED: conv_dilated2d_forward_cuda" << std::endl;
   CALL_FORWARD_OUT(2);
   return std::tie(output, columns, ones);
 }
 
-std::tuple<Tensor&, Tensor&, Tensor&> conv_dilated2d_backward_out_cpu(
+std::tuple<Tensor&, Tensor&, Tensor&> conv_dilated2d_backward_out_cuda(
     Tensor& grad_input,
     Tensor& grad_weight,
     Tensor& grad_bias,
@@ -897,7 +936,7 @@ std::tuple<Tensor&, Tensor&, Tensor&> conv_dilated2d_backward_out_cpu(
   return std::tie(grad_input, grad_weight, grad_bias);
 }
 
-std::tuple<Tensor, Tensor, Tensor> conv_dilated2d_backward_cpu(
+std::tuple<Tensor, Tensor, Tensor> conv_dilated2d_backward_cuda(
     const Tensor& grad_output,
     const Tensor& input,
     const Tensor& weight,
@@ -916,7 +955,7 @@ std::tuple<Tensor, Tensor, Tensor> conv_dilated2d_backward_cpu(
   return std::tie(grad_input, grad_weight, grad_bias);
 }
 
-std::tuple<Tensor&, Tensor&, Tensor&> conv_dilated3d_out_cpu(
+std::tuple<Tensor&, Tensor&, Tensor&> conv_dilated3d_out_cuda(
     Tensor& output,
     Tensor& columns,
     Tensor& ones,
@@ -944,7 +983,7 @@ std::tuple<Tensor&, Tensor&, Tensor&> conv_dilated3d_out_cpu(
   return std::tie(output, columns, ones);
 }
 
-Tensor& conv_dilated3d_out_cpu(
+Tensor& conv_dilated3d_out_cuda(
     Tensor& output,
     const Tensor& input,
     const Tensor& weight,
@@ -960,7 +999,7 @@ Tensor& conv_dilated3d_out_cpu(
   return output;
 }
 
-Tensor conv_dilated3d_cpu(
+Tensor conv_dilated3d_cuda(
     const Tensor& input,
     const Tensor& weight,
     IntArrayRef kernel_size,
@@ -976,7 +1015,7 @@ Tensor conv_dilated3d_cpu(
   return output;
 }
 
-std::tuple<Tensor&, Tensor&, Tensor&> conv_dilated3d_forward_out_cpu(
+std::tuple<Tensor&, Tensor&, Tensor&> conv_dilated3d_forward_out_cuda(
     Tensor& output,
     Tensor& columns,
     Tensor& ones,
@@ -987,12 +1026,12 @@ std::tuple<Tensor&, Tensor&, Tensor&> conv_dilated3d_forward_out_cpu(
     IntArrayRef stride_size,
     IntArrayRef pad_size,
     IntArrayRef dilation_size) {
-  std::cout << "NOT IMPLEMENTED: conv_dilated3d_forward_out_cpu3" << std::endl;
+  std::cout << "NOT IMPLEMENTED: conv_dilated3d_forward_out_cuda3" << std::endl;
   CALL_OUT(3); // Is this correct??
   return std::tie(output, columns, ones);
 }
 
-Tensor& conv_dilated3d_forward_out_cpu(
+Tensor& conv_dilated3d_forward_out_cuda(
     Tensor& output,
     const Tensor& input,
     const Tensor& weight,
@@ -1004,12 +1043,12 @@ Tensor& conv_dilated3d_forward_out_cpu(
   auto options = output.options();
   Tensor columns = at::empty({0}, options);
   Tensor ones = at::empty({0}, options);
-  std::cout << "NOT IMPLEMENTED: conv_dilated3d_forward_out_cpu1" << std::endl;
+  std::cout << "NOT IMPLEMENTED: conv_dilated3d_forward_out_cuda1" << std::endl;
   CALL_FORWARD_OUT(3);
   return output;
 }
 
-std::tuple<Tensor, Tensor, Tensor> conv_dilated3d_forward_cpu(
+std::tuple<Tensor, Tensor, Tensor> conv_dilated3d_forward_cuda(
     const Tensor& input,
     const Tensor& weight,
     IntArrayRef kernel_size,
@@ -1021,12 +1060,12 @@ std::tuple<Tensor, Tensor, Tensor> conv_dilated3d_forward_cpu(
   Tensor output = at::empty({0}, options);
   Tensor columns = at::empty({0}, options);
   Tensor ones = at::empty({0}, options);
-  std::cout << "NOT IMPLEMENTED: conv_dilated3d_forward_cpu" << std::endl;
+  std::cout << "NOT IMPLEMENTED: conv_dilated3d_forward_cuda" << std::endl;
   CALL_FORWARD_OUT(3);
   return std::tie(output, columns, ones);
 }
 
-std::tuple<Tensor&, Tensor&, Tensor&> conv_dilated3d_backward_out_cpu(
+std::tuple<Tensor&, Tensor&, Tensor&> conv_dilated3d_backward_out_cuda(
     Tensor& grad_input,
     Tensor& grad_weight,
     Tensor& grad_bias,
@@ -1051,7 +1090,7 @@ std::tuple<Tensor&, Tensor&, Tensor&> conv_dilated3d_backward_out_cpu(
   return std::tie(grad_input, grad_weight, grad_bias);
 }
 
-std::tuple<Tensor, Tensor, Tensor> conv_dilated3d_backward_cpu(
+std::tuple<Tensor, Tensor, Tensor> conv_dilated3d_backward_cuda(
     const Tensor& grad_output,
     const Tensor& input,
     const Tensor& weight,
