@@ -538,7 +538,42 @@ void conv_dilated2d_all_cuda_template(
     ones.resize_({outputHeight, outputWidth});
     ones.fill_(1);
   }
-
+  // checking data locations
+  TensorArg output_arg{output, "output", 1}, input_arg{input, "input", 2},
+      weight_arg{weight, "weight", 3}, bias_arg{bias, "bias", 4},
+      grad_output_arg{grad_output, "grad_output", 5},
+      grad_input_arg{grad_input, "grad_input", 6},
+      grad_weight_arg{grad_weight, "grad_weight", 7},
+      grad_bias_arg{grad_bias, "grad_bias", 8},
+      columns_arg{columns, "columns", 13}, ones_arg{ones, "ones", 14};
+  if (output.numel() > 0) {
+    checkAllSameGPU(
+        "conv_dilated2d_all_cuda_template",
+        {input_arg, output_arg, weight_arg, columns_arg, ones_arg});
+    if (bias.numel() > 0) {
+      checkAllSameGPU(
+          "conv_dilated2d_all_cuda_template", {weight_arg, bias_arg});
+    }
+  }
+  if (grad_input.numel() > 0) {
+    checkAllSameGPU(
+        "conv_dilated2d_all_cuda_template",
+        {grad_input_arg, grad_output_arg, weight_arg, columns_arg});
+  }
+  if (grad_weight.numel() > 0) {
+    checkAllSameGPU(
+        "conv_dilated2d_all_cuda_template",
+        {input_arg,
+         grad_output_arg,
+         grad_weight_arg,
+         columns_arg,
+         grad_input_arg});
+  }
+  if (grad_bias.numel() > 0) {
+    checkAllSameGPU(
+        "conv_dilated2d_all_cuda_template",
+        {grad_bias_arg, grad_output_arg, weight_arg, ones_arg});
+  }
   // checking shapes after all shapes have been settled:
   conv_dilated_shape_check(
       2,
@@ -704,7 +739,42 @@ void conv_dilated3d_all_cuda_template(
     ones.resize_({outputDepth, outputHeight, outputWidth});
     ones.fill_(1);
   }
-
+  // checking data locations
+  TensorArg output_arg{output, "output", 1}, input_arg{input, "input", 2},
+      weight_arg{weight, "weight", 3}, bias_arg{bias, "bias", 4},
+      grad_output_arg{grad_output, "grad_output", 5},
+      grad_input_arg{grad_input, "grad_input", 6},
+      grad_weight_arg{grad_weight, "grad_weight", 7},
+      grad_bias_arg{grad_bias, "grad_bias", 8},
+      columns_arg{columns, "columns", 13}, ones_arg{ones, "ones", 14};
+  if (output.numel() > 0) {
+    checkAllSameGPU(
+        "conv_dilated3d_all_cuda_template",
+        {input_arg, output_arg, weight_arg, columns_arg, ones_arg});
+    if (bias.numel() > 0) {
+      checkAllSameGPU(
+          "conv_dilated3d_all_cuda_template", {weight_arg, bias_arg});
+    }
+  }
+  if (grad_input.numel() > 0) {
+    checkAllSameGPU(
+        "conv_dilated3d_all_cuda_template",
+        {grad_input_arg, grad_output_arg, weight_arg, columns_arg});
+  }
+  if (grad_weight.numel() > 0) {
+    checkAllSameGPU(
+        "conv_dilated3d_all_cuda_template",
+        {input_arg,
+         grad_output_arg,
+         grad_weight_arg,
+         columns_arg,
+         grad_input_arg});
+  }
+  if (grad_bias.numel() > 0) {
+    checkAllSameGPU(
+        "conv_dilated3d_all_cuda_template",
+        {grad_bias_arg, grad_output_arg, weight_arg, ones_arg});
+  }
   // checking shapes after all shapes have been settled:
   conv_dilated_shape_check(
       3,
