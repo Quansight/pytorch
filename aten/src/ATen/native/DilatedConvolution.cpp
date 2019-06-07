@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <tuple>
 #include "ATen/ATen.h"
+#include "ATen/native/im2col.h"
+#include "ATen/native/vol2col.h"
 #include "TH/THBlasUtils.h"
 
 #define TORCH_CHECK_DIM_SIZE(T, DIM, DIM_SIZE, SIZE) \
@@ -45,7 +47,7 @@
   {                                         \
     auto* COL##_ptr = COL.data<scalar_t>(); \
     auto* IM##_ptr = IM.data<scalar_t>();   \
-    THBlas_im2col<scalar_t>(                \
+    im2col<scalar_t>(                       \
         IM##_ptr,                           \
         nInputPlane,                        \
         inputHeight,                        \
@@ -67,7 +69,7 @@
   {                                         \
     auto* COL##_ptr = COL.data<scalar_t>(); \
     auto* IM##_ptr = IM.data<scalar_t>();   \
-    THBlas_col2im<scalar_t>(                \
+    col2im<scalar_t>(                       \
         COL##_ptr,                          \
         nInputPlane,                        \
         inputHeight,                        \
@@ -89,7 +91,7 @@
   {                                         \
     auto* COL##_ptr = COL.data<scalar_t>(); \
     auto* IM##_ptr = IM.data<scalar_t>();   \
-    THBlas_vol2col<scalar_t>(               \
+    vol2col<scalar_t>(                      \
         IM##_ptr,                           \
         nInputPlane,                        \
         inputDepth,                         \
@@ -117,7 +119,7 @@
   {                                         \
     auto* COL##_ptr = COL.data<scalar_t>(); \
     auto* IM##_ptr = IM.data<scalar_t>();   \
-    THBlas_col2vol<scalar_t>(               \
+    col2vol<scalar_t>(                      \
         COL##_ptr,                          \
         nInputPlane,                        \
         inputDepth,                         \
