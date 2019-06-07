@@ -31,8 +31,8 @@
     auto* C##_ptr = C.data<scalar_t>();              \
     at::cuda::blas::gemm<scalar_t>(                  \
         stream,                                      \
-        CUBLAS_OP_##TA,                              \
-        CUBLAS_OP_##TB,                              \
+        TA,                                          \
+        TB,                                          \
         n,                                           \
         m,                                           \
         k,                                           \
@@ -53,7 +53,7 @@
     auto* Y##_ptr = Y.data<scalar_t>();       \
     at::cuda::blas::gemv<scalar_t>(           \
         stream,                               \
-        CUBLAS_OP_##TA,                       \
+        TA,                                   \
         m,                                    \
         n,                                    \
         ALPHA,                                \
@@ -611,7 +611,7 @@ void conv_dilated2d_all_cuda_template(
               int64_t n = outputHeight * outputWidth;
               int64_t m = nOutputPlane;
               int64_t k = 1;
-              CALLGEMM(T, N, 1, ones, k, bias, k, 0, output_n);
+              CALLGEMM('t', 'n', 1, ones, k, bias, k, 0, output_n);
             } else {
               output_n.zero_();
             }
@@ -621,7 +621,7 @@ void conv_dilated2d_all_cuda_template(
               int64_t n = outputHeight * outputWidth;
               int64_t m = nOutputPlane;
               int64_t k = nInputPlane * kH * kW;
-              CALLGEMM(N, N, 1, columns, n, weight, k, 1, output_n);
+              CALLGEMM('n', 'n', 1, columns, n, weight, k, 1, output_n);
             }
           } else {
             // All gradients
@@ -633,7 +633,7 @@ void conv_dilated2d_all_cuda_template(
             int64_t n = columns.size(1);
             int64_t m = nInputPlane * kW * kH;
             int64_t k = nOutputPlane;
-            CALLGEMM(N, T, 1, grad_output_n, n, weight, m, 0, columns);
+            CALLGEMM('n', 't', 1, grad_output_n, n, weight, m, 0, columns);
             // Unpack columns back into input:
             grad_input_n = grad_input.select(0, elt);
             CALLCOL2IM(columns, grad_input_n);
@@ -647,7 +647,7 @@ void conv_dilated2d_all_cuda_template(
             scalar_t scale = 1; // TODO: expose as argument
             // Extract columns:
             CALLIM2COL(input_n, columns);
-            CALLGEMM(T, N, scale, columns, k, grad_output_n, k, 1, grad_weight);
+            CALLGEMM('t', 'n', scale, columns, k, grad_output_n, k, 1, grad_weight);
           }
 
           // Gradient of bias:
@@ -655,7 +655,7 @@ void conv_dilated2d_all_cuda_template(
             int64_t m = outputHeight * outputWidth;
             int64_t n = nOutputPlane;
             scalar_t scale = 1; // TODO: expose as argument
-            CALLGEMV(T, scale, grad_output_n, m, ones, 1, grad_bias);
+            CALLGEMV('t', scale, grad_output_n, m, ones, 1, grad_bias);
           }
         }
       });
@@ -812,7 +812,7 @@ void conv_dilated3d_all_cuda_template(
               int64_t n = outputDepth * outputHeight * outputWidth;
               int64_t m = nOutputPlane;
               int64_t k = 1;
-              CALLGEMM(T, N, 1, ones, k, bias, k, 0, output_n);
+              CALLGEMM('t', 'n', 1, ones, k, bias, k, 0, output_n);
             } else {
               output_n.zero_();
             }
@@ -822,7 +822,7 @@ void conv_dilated3d_all_cuda_template(
               int64_t n = outputDepth * outputHeight * outputWidth;
               int64_t m = nOutputPlane;
               int64_t k = nInputPlane * kD * kH * kW;
-              CALLGEMM(N, N, 1, columns, n, weight, k, 1, output_n);
+              CALLGEMM('n', 'n', 1, columns, n, weight, k, 1, output_n);
             }
           } else {
             // All gradients
@@ -834,7 +834,7 @@ void conv_dilated3d_all_cuda_template(
             int64_t n = columns.size(1);
             int64_t m = nInputPlane * kW * kH * kD;
             int64_t k = nOutputPlane;
-            CALLGEMM(N, T, 1, grad_output_n, n, weight, m, 0, columns);
+            CALLGEMM('n', 't', 1, grad_output_n, n, weight, m, 0, columns);
             // Unpack columns back into input:
             grad_input_n = grad_input.select(0, elt);
             CALLCOL2VOL(columns, grad_input_n);
@@ -848,7 +848,7 @@ void conv_dilated3d_all_cuda_template(
             scalar_t scale = 1; // TODO: expose as argument
             // Extract columns:
             CALLVOL2COL(input_n, columns);
-            CALLGEMM(T, N, scale, columns, k, grad_output_n, k, 1, grad_weight);
+            CALLGEMM('t', 'n', scale, columns, k, grad_output_n, k, 1, grad_weight);
           }
 
           // Gradient of bias:
@@ -856,7 +856,7 @@ void conv_dilated3d_all_cuda_template(
             int64_t m = outputDepth * outputHeight * outputWidth;
             int64_t n = nOutputPlane;
             scalar_t scale = 1; // TODO: expose as argument
-            CALLGEMV(T, scale, grad_output_n, m, ones, 1, grad_bias);
+            CALLGEMV('t', scale, grad_output_n, m, ones, 1, grad_bias);
           }
         }
       });
