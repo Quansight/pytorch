@@ -82,14 +82,14 @@
       ones)
 
 #define INSERT_BATCH_DIMENSION(A, SIZE)        \
-  if (A.numel() > 0) {                         \
+  if (A.defined()) {                           \
     auto new_sizes = A.sizes().vec();          \
     new_sizes.insert(new_sizes.begin(), SIZE); \
     A.resize_(new_sizes);                      \
   }
 
 #define DROP_BATCH_DIMENSION(A)    \
-  if (A.numel() > 0) {             \
+  if (A.defined()) {               \
     A.resize_(A.sizes().slice(1)); \
   }
 
@@ -161,7 +161,7 @@ void conv_dilated_shape_check(
       "dilation should be greater than zero, but got ",
       dilation_size);
 
-  if (weight.numel() > 0) {
+  if (weight.defined()) {
     TORCH_CHECK(
         weight.dim() == dim + 2,
         "non-empty ",
@@ -169,13 +169,13 @@ void conv_dilated_shape_check(
         "D weight tensor (nOutputPlane, nInputPlane, ..., kH, kW) expected, "
         "but got ",
         weight.sizes());
-    if (bias.numel() > 0) {
+    if (bias.defined()) {
       TORCH_CHECK_DIM_SIZE(bias, 1, 0, weight.size(0));
       TORCH_CHECK(bias.is_contiguous(), "bias needs to be contiguous");
     }
   }
 
-  if (grad_weight.numel() > 0) {
+  if (grad_weight.defined()) {
     TORCH_CHECK(
         grad_weight.dim() == dim + 2,
         "non-empty ",
@@ -185,7 +185,7 @@ void conv_dilated_shape_check(
         grad_weight.sizes());
     TORCH_CHECK(
         grad_weight.is_contiguous(), "grad_weight needs to be contiguous");
-    if (grad_bias.numel() > 0) {
+    if (grad_bias.defined()) {
       TORCH_CHECK_DIM_SIZE(grad_bias, 1, 0, grad_weight.size(0));
       TORCH_CHECK(
           grad_bias.is_contiguous(), "grad_bias needs to be contiguous");
@@ -209,7 +209,7 @@ void conv_dilated_shape_check(
     dimw++;
   }
   TORCH_CHECK(
-      input.numel() > 0 && (ndim == dim + 2 || ndim == dim + 1),
+      input.defined() && (ndim == dim + 2 || ndim == dim + 1),
       "non-empty ",
       dim + 1,
       "D or ",
@@ -235,13 +235,13 @@ void conv_dilated_shape_check(
           " x ",
           outputWidth,
           "). Output size is too small");
-      if (grad_output.numel() > 0) {
+      if (grad_output.defined()) {
         TORCH_CHECK_DIM_SIZE(grad_output, ndim, dimh, outputHeight);
         TORCH_CHECK_DIM_SIZE(grad_output, ndim, dimw, outputWidth);
       }
-      if (ones.numel() > 0) {
+      if (bias.defined() || grad_bias.defined()) {
         TORCH_CHECK(
-            ones.numel() >= outputHeight * outputWidth,
+            ones.defined() && ones.numel() >= outputHeight * outputWidth,
             "expected at least ",
             outputHeight * outputWidth,
             " ones but got ",
@@ -271,15 +271,16 @@ void conv_dilated_shape_check(
           " x ",
           outputWidth,
           "). Output size is too small");
-      if (grad_output.numel() > 0) {
+      if (grad_output.defined()) {
         TORCH_CHECK_DIM_SIZE(grad_output, ndim, dimd, outputDepth);
         TORCH_CHECK_DIM_SIZE(grad_output, ndim, dimh, outputHeight);
         TORCH_CHECK_DIM_SIZE(grad_output, ndim, dimw, outputWidth);
       }
 
-      if (ones.numel() > 0) {
+      if (bias.defined() || grad_bias.defined()) {
         TORCH_CHECK(
-            ones.numel() >= outputDepth * outputHeight * outputWidth,
+            ones.defined() &&
+                ones.numel() >= outputDepth * outputHeight * outputWidth,
             "expected at least ",
             outputDepth * outputHeight * outputWidth,
             " ones but got ",
@@ -290,22 +291,22 @@ void conv_dilated_shape_check(
     default:
       TORCH_CHECK(false, "unexpected dim in conv_dilate shape check", dim);
   } // switch
-  if (weight.numel() > 1) {
+  if (weight.defined()) {
     int64_t nInputPlane = weight.size(1);
     TORCH_CHECK_DIM_SIZE(input, ndim, dimf, nInputPlane);
   }
 
-  if (grad_output.numel() > 0) {
-    if (weight.numel() > 0) {
+  if (grad_output.defined()) {
+    if (weight.defined()) {
       int64_t nOutputPlane = weight.size(0);
       TORCH_CHECK_DIM_SIZE(grad_output, ndim, dimf, nOutputPlane);
-    } else if (bias.numel() > 0) {
+    } else if (bias.defined()) {
       int64_t nOutputPlane = bias.size(0);
       TORCH_CHECK_DIM_SIZE(grad_output, ndim, dimf, nOutputPlane);
     }
   }
 
-  if (columns.numel() > 0) {
+  if (columns.defined()) {
     TORCH_CHECK(columns.is_contiguous(), "columns needs to be contiguous");
   }
 
@@ -365,17 +366,17 @@ void conv_dilated2d_all_cpu_template(
   int64_t outputWidth = OUTPUTSIZE(1, 2);
 
   // Resize temporary columns
-  if (output.numel() > 0 || grad_weight.numel() > 0 || grad_input.numel() > 0) {
+  if (output.defined() || grad_weight.defined() || grad_input.defined()) {
     columns.resize_({nInputPlane * kW * kH, outputHeight * outputWidth});
   }
-  if (grad_weight.numel() > 0) {
+  if (grad_weight.defined()) {
     grad_weight.zero_();
   }
-  if (grad_bias.numel() > 0) {
+  if (grad_bias.defined()) {
     grad_bias.zero_();
   }
   // Resize temporary ones
-  if (bias.numel() > 0 || grad_bias.numel() > 0) {
+  if (bias.defined() || grad_bias.defined()) {
     // Define a buffer of ones, for bias accumulation
     ones.resize_({outputHeight, outputWidth});
     ones.fill_(1);
@@ -411,9 +412,9 @@ void conv_dilated2d_all_cpu_template(
       input_n = input.select(0, elt);
 
       // Output
-      if (output.numel() > 0) {
+      if (output.defined()) {
         output_n = output.select(0, elt);
-        if (bias.numel() > 0) {
+        if (bias.defined()) {
           // For gemm argument derivation, see
           // conv_dilated2d_all_cuda_template in
           // ATen/native/cuda/DilatedConvolution.cu
@@ -451,7 +452,7 @@ void conv_dilated2d_all_cpu_template(
             dilationH,
             dilationW,
             columns.data<scalar_t>());
-        
+
         // For gemm argument derivation, see
         // conv_dilated2d_all_cuda_template in
         // ATen/native/cuda/DilatedConvolution.cu
@@ -475,7 +476,7 @@ void conv_dilated2d_all_cpu_template(
       }
 
       // Gradient of input:
-      if (grad_input.numel() > 0) {
+      if (grad_input.defined()) {
         // For gemm argument derivation, see
         // conv_dilated2d_all_cuda_template in
         // ATen/native/cuda/DilatedConvolution.cu
@@ -514,7 +515,7 @@ void conv_dilated2d_all_cpu_template(
       }
 
       // Gradient of weight:
-      if (grad_weight.numel() > 0) {
+      if (grad_weight.defined()) {
         scalar_t scale = 1; // TODO: expose as argument?
         // Extract columns:
         im2col<scalar_t>(
@@ -553,7 +554,7 @@ void conv_dilated2d_all_cpu_template(
       }
 
       // Gradient of bias:
-      if (grad_bias.numel() > 0) {
+      if (grad_bias.defined()) {
         scalar_t scale = 1; // TODO: expose as argument?
         // For gemm argument derivation, see
         // conv_dilated2d_all_cuda_template in
@@ -636,18 +637,18 @@ void conv_dilated3d_all_cpu_template(
   int64_t outputWidth = OUTPUTSIZE(2, 3);
 
   // Resize temporary columns
-  if (output.numel() > 0 || grad_weight.numel() > 0 || grad_input.numel() > 0) {
+  if (output.defined() || grad_weight.defined() || grad_input.defined()) {
     columns.resize_(
         {nInputPlane * kW * kH * kD, outputDepth * outputHeight * outputWidth});
   }
-  if (grad_weight.numel() > 0) {
+  if (grad_weight.defined()) {
     grad_weight.zero_();
   }
-  if (grad_bias.numel() > 0) {
+  if (grad_bias.defined()) {
     grad_bias.zero_();
   }
   // Resize temporary ones
-  if (bias.numel() > 0 || grad_bias.numel() > 0) {
+  if (bias.defined() || grad_bias.defined()) {
     // Define a buffer of ones, for bias accumulation
     ones.resize_({outputDepth, outputHeight, outputWidth});
     ones.fill_(1);
@@ -683,9 +684,9 @@ void conv_dilated3d_all_cpu_template(
       input_n = input.select(0, elt);
 
       // Output
-      if (output.numel() > 0) {
+      if (output.defined()) {
         output_n = output.select(0, elt);
-        if (bias.numel() > 0) {
+        if (bias.defined()) {
           // For gemm argument derivation, see
           // conv_dilated2d_all_cuda_template in
           // ATen/native/cuda/DilatedConvolution.cu
@@ -752,7 +753,7 @@ void conv_dilated3d_all_cpu_template(
       }
 
       // Gradient of input:
-      if (grad_input.numel() > 0) {
+      if (grad_input.defined()) {
         // For gemm argument derivation, see
         // conv_dilated2d_all_cuda_template in
         // ATen/native/cuda/DilatedConvolution.cu
@@ -798,7 +799,7 @@ void conv_dilated3d_all_cpu_template(
       }
 
       // Gradient of weight:
-      if (grad_weight.numel() > 0) {
+      if (grad_weight.defined()) {
         scalar_t scale = 1; // TODO: expose as argument?
         // Extract columns:
         vol2col<scalar_t>(
@@ -843,7 +844,7 @@ void conv_dilated3d_all_cpu_template(
       }
 
       // Gradient of bias:
-      if (grad_bias.numel() > 0) {
+      if (grad_bias.defined()) {
         scalar_t scale = 1; // TODO: expose as argument?
         // For gemv argument derivation, see
         // conv_dilated2d_all_cuda_template in
@@ -886,10 +887,10 @@ std::tuple<Tensor&, Tensor&, Tensor&> conv_dilated2d_out_cpu(
     IntArrayRef pad_size,
     IntArrayRef dilation_size) {
   auto options = input.options();
-  Tensor grad_output = at::empty({0}, options); // not used
-  Tensor grad_input = at::empty({0}, options); // not used
-  Tensor grad_weight = at::empty({0}, options); // not used
-  Tensor grad_bias = at::empty({0}, options); // not used
+  Tensor grad_output;
+  Tensor grad_input;
+  Tensor grad_weight;
+  Tensor grad_bias;
   int64_t nOutputPlane = weight.size(0);
   int64_t outputHeight = OUTPUTSIZE(0, 2);
   int64_t outputWidth = OUTPUTSIZE(1, 2);
@@ -944,8 +945,8 @@ std::tuple<Tensor&, Tensor&, Tensor&> conv_dilated2d_forward_out_cpu(
     IntArrayRef stride_size,
     IntArrayRef pad_size,
     IntArrayRef dilation_size) {
-  std::cout << "NOT IMPLEMENTED: conv_dilated2d_forward_out_cpu3" << std::endl;
-  CALL_OUT(2); // Is this correct??
+  // Is this function dead?
+  CALL_OUT(2);
   return std::tie(output, columns, ones);
 }
 
@@ -958,10 +959,10 @@ Tensor& conv_dilated2d_forward_out_cpu(
     IntArrayRef stride_size,
     IntArrayRef pad_size,
     IntArrayRef dilation_size) {
+  // Is this function dead?
   auto options = output.options();
   Tensor columns = at::empty({0}, options);
   Tensor ones = at::empty({0}, options);
-  std::cout << "NOT IMPLEMENTED: conv_dilated2d_forward_out_cpu1" << std::endl;
   CALL_FORWARD_OUT(2);
   return output;
 }
@@ -974,11 +975,11 @@ std::tuple<Tensor, Tensor, Tensor> conv_dilated2d_forward_cpu(
     IntArrayRef stride_size,
     IntArrayRef pad_size,
     IntArrayRef dilation_size) {
+  // Is this function dead?
   auto options = input.options();
   Tensor output = at::empty({0}, options);
   Tensor columns = at::empty({0}, options);
   Tensor ones = at::empty({0}, options);
-  std::cout << "NOT IMPLEMENTED: conv_dilated2d_forward_cpu" << std::endl;
   CALL_FORWARD_OUT(2);
   return std::tie(output, columns, ones);
 }
@@ -997,14 +998,13 @@ std::tuple<Tensor&, Tensor&, Tensor&> conv_dilated2d_backward_out_cpu(
     const Tensor& columns,
     const Tensor& ones) {
   auto options = grad_input.options();
-  Tensor output = at::empty({0}, options);
+  Tensor output;
   Tensor columns_buf = columns;
   Tensor ones_buf = ones;
-  Tensor bias = at::empty({0}, options);
-
+  Tensor bias;
   grad_input.resize_(input.sizes());
   grad_weight.resize_(weight.sizes());
-  grad_bias.resize_(weight.size(0)); // TODO: is this correct?
+  grad_bias.resize_(weight.size(0));
   CALL_TEMPLATE(2);
   return std::tie(grad_input, grad_weight, grad_bias);
 }
@@ -1040,10 +1040,10 @@ std::tuple<Tensor&, Tensor&, Tensor&> conv_dilated3d_out_cpu(
     IntArrayRef pad_size,
     IntArrayRef dilation_size) {
   auto options = input.options();
-  Tensor grad_output = at::empty({0}, options); // not used
-  Tensor grad_input = at::empty({0}, options); // not used
-  Tensor grad_weight = at::empty({0}, options); // not used
-  Tensor grad_bias = at::empty({0}, options); // not used
+  Tensor grad_output;
+  Tensor grad_input;
+  Tensor grad_weight;
+  Tensor grad_bias;
   int64_t nOutputPlane = weight.size(0);
   int64_t outputDepth = OUTPUTSIZE(0, 3);
   int64_t outputHeight = OUTPUTSIZE(1, 3);
@@ -1099,8 +1099,8 @@ std::tuple<Tensor&, Tensor&, Tensor&> conv_dilated3d_forward_out_cpu(
     IntArrayRef stride_size,
     IntArrayRef pad_size,
     IntArrayRef dilation_size) {
-  std::cout << "NOT IMPLEMENTED: conv_dilated3d_forward_out_cpu3" << std::endl;
-  CALL_OUT(3); // Is this correct??
+  // Is this function dead?
+  CALL_OUT(3);
   return std::tie(output, columns, ones);
 }
 
@@ -1113,10 +1113,10 @@ Tensor& conv_dilated3d_forward_out_cpu(
     IntArrayRef stride_size,
     IntArrayRef pad_size,
     IntArrayRef dilation_size) {
+  // Is this function dead?
   auto options = output.options();
   Tensor columns = at::empty({0}, options);
   Tensor ones = at::empty({0}, options);
-  std::cout << "NOT IMPLEMENTED: conv_dilated3d_forward_out_cpu1" << std::endl;
   CALL_FORWARD_OUT(3);
   return output;
 }
@@ -1129,11 +1129,11 @@ std::tuple<Tensor, Tensor, Tensor> conv_dilated3d_forward_cpu(
     IntArrayRef stride_size,
     IntArrayRef pad_size,
     IntArrayRef dilation_size) {
+  // Is this function dead?
   auto options = input.options();
   Tensor output = at::empty({0}, options);
   Tensor columns = at::empty({0}, options);
   Tensor ones = at::empty({0}, options);
-  std::cout << "NOT IMPLEMENTED: conv_dilated3d_forward_cpu" << std::endl;
   CALL_FORWARD_OUT(3);
   return std::tie(output, columns, ones);
 }
@@ -1152,13 +1152,13 @@ std::tuple<Tensor&, Tensor&, Tensor&> conv_dilated3d_backward_out_cpu(
     const Tensor& columns,
     const Tensor& ones) {
   auto options = grad_input.options();
-  Tensor output = at::empty({0}, options);
+  Tensor output;
   Tensor columns_buf = columns;
   Tensor ones_buf = ones;
-  Tensor bias = at::empty({0}, options);
+  Tensor bias;
   grad_input.resize_(input.sizes());
   grad_weight.resize_(weight.sizes());
-  grad_bias.resize_(weight.size(0)); // TODO: is this correct?
+  grad_bias.resize_(weight.size(0));
   CALL_TEMPLATE(3);
   return std::tie(grad_input, grad_weight, grad_bias);
 }
