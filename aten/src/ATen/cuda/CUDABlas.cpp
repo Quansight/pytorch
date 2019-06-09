@@ -29,13 +29,13 @@
       " but got ",                           \
       X)
 
-#define CUDABLAS_NONNEGINT_CHECK(FD, X)      \
-  TORCH_CHECK(                               \
-      (X >= 0 && X <= INT_MAX),              \
-      "at::cuda::blas::" #FD " argument " #X \
-      " must be positive and less than ",    \
-      INT_MAX,                               \
-      " but got ",                           \
+#define CUDABLAS_NONNEGINT_CHECK(FD, X)       \
+  TORCH_CHECK(                                \
+      (X >= 0 && X <= INT_MAX),               \
+      "at::cuda::blas::" #FD " argument " #X  \
+      " must be non-negative and less than ", \
+      INT_MAX,                                \
+      " but got ",                            \
       X)
 
 namespace {

@@ -20,130 +20,6 @@
       T.sizes())
 
 /*
-  The following CALL... macros are for convenience of this source file
-  only. These should be replaced with ATen native functions as soon as
-  col2im, im2col, gemm, and gemv are ported.
- */
-
-#define CALLGEMM(TA, TB, ALPHA, A, N, B, M, BETA, C)                       \
-  {                                                                        \
-    auto* A##_ptr = A.data<scalar_t>();                                    \
-    auto* B##_ptr = B.data<scalar_t>();                                    \
-    auto* C##_ptr = C.data<scalar_t>();                                    \
-    THBlas_gemm<scalar_t>(                                                 \
-        TA, TB, n, m, k, ALPHA, A##_ptr, N, B##_ptr, M, BETA, C##_ptr, n); \
-  }
-
-#define CALLGEMV(TA, ALPHA, A, K, X, BETA, Y)                       \
-  {                                                                 \
-    auto* A##_ptr = A.data<scalar_t>();                             \
-    auto* X##_ptr = X.data<scalar_t>();                             \
-    auto* Y##_ptr = Y.data<scalar_t>();                             \
-    THBlas_gemv<scalar_t>(                                          \
-        TA, m, n, ALPHA, A##_ptr, K, X##_ptr, 1, BETA, Y##_ptr, 1); \
-  }
-
-#define CALLIM2COL(IM, COL)                 \
-  {                                         \
-    auto* COL##_ptr = COL.data<scalar_t>(); \
-    auto* IM##_ptr = IM.data<scalar_t>();   \
-    im2col<scalar_t>(                       \
-        IM##_ptr,                           \
-        nInputPlane,                        \
-        inputHeight,                        \
-        inputWidth,                         \
-        outputHeight,                       \
-        outputWidth,                        \
-        kH,                                 \
-        kW,                                 \
-        padH,                               \
-        padW,                               \
-        dH,                                 \
-        dW,                                 \
-        dilationH,                          \
-        dilationW,                          \
-        COL##_ptr);                         \
-  }
-
-#define CALLCOL2IM(COL, IM)                 \
-  {                                         \
-    auto* COL##_ptr = COL.data<scalar_t>(); \
-    auto* IM##_ptr = IM.data<scalar_t>();   \
-    col2im<scalar_t>(                       \
-        COL##_ptr,                          \
-        nInputPlane,                        \
-        inputHeight,                        \
-        inputWidth,                         \
-        outputHeight,                       \
-        outputWidth,                        \
-        kH,                                 \
-        kW,                                 \
-        padH,                               \
-        padW,                               \
-        dH,                                 \
-        dW,                                 \
-        dilationH,                          \
-        dilationW,                          \
-        IM##_ptr);                          \
-  }
-
-#define CALLVOL2COL(IM, COL)                \
-  {                                         \
-    auto* COL##_ptr = COL.data<scalar_t>(); \
-    auto* IM##_ptr = IM.data<scalar_t>();   \
-    vol2col<scalar_t>(                      \
-        IM##_ptr,                           \
-        nInputPlane,                        \
-        inputDepth,                         \
-        inputHeight,                        \
-        inputWidth,                         \
-        outputDepth,                        \
-        outputHeight,                       \
-        outputWidth,                        \
-        kD,                                 \
-        kH,                                 \
-        kW,                                 \
-        padD,                               \
-        padH,                               \
-        padW,                               \
-        dD,                                 \
-        dH,                                 \
-        dW,                                 \
-        dilationD,                          \
-        dilationH,                          \
-        dilationW,                          \
-        COL##_ptr);                         \
-  }
-
-#define CALLCOL2VOL(COL, IM)                \
-  {                                         \
-    auto* COL##_ptr = COL.data<scalar_t>(); \
-    auto* IM##_ptr = IM.data<scalar_t>();   \
-    col2vol<scalar_t>(                      \
-        COL##_ptr,                          \
-        nInputPlane,                        \
-        inputDepth,                         \
-        inputHeight,                        \
-        inputWidth,                         \
-        outputDepth,                        \
-        outputHeight,                       \
-        outputWidth,                        \
-        kD,                                 \
-        kH,                                 \
-        kW,                                 \
-        padD,                               \
-        padH,                               \
-        padW,                               \
-        dD,                                 \
-        dH,                                 \
-        dW,                                 \
-        dilationD,                          \
-        dilationH,                          \
-        dilationW,                          \
-        IM##_ptr);                          \
-  }
-
-/*
   Some convenience macros
  */
 
@@ -538,21 +414,61 @@ void conv_dilated2d_all_cpu_template(
       if (output.numel() > 0) {
         output_n = output.select(0, elt);
         if (bias.numel() > 0) {
-          int64_t n = outputHeight * outputWidth;
-          int64_t m = nOutputPlane;
-          int64_t k = 1;
-          CALLGEMM('t', 'n', 1, ones, k, bias, k, 0, output_n);
+          // For gemm argument derivation, see
+          // conv_dilated2d_all_cuda_template in
+          // ATen/native/cuda/DilatedConvolution.cu
+          THBlas_gemm<scalar_t>(
+              /*transa=*/'t',
+              /*transb=*/'n',
+              /*     m=*/outputHeight * outputWidth,
+              /*     n=*/nOutputPlane,
+              /*     k=*/1,
+              /* alpha=*/1,
+              /*     A=*/ones.data<scalar_t>(),
+              /*   lda=*/1,
+              /*     B=*/bias.data<scalar_t>(),
+              /*   ldb=*/1,
+              /*  beta=*/0,
+              /*     C=*/output_n.data<scalar_t>(),
+              /*   ldc=*/outputHeight * outputWidth);
         } else {
           output_n.zero_();
         }
         // Extract columns:
-        CALLIM2COL(input_n, columns);
-        {
-          int64_t n = outputHeight * outputWidth;
-          int64_t m = nOutputPlane;
-          int64_t k = nInputPlane * kH * kW;
-          CALLGEMM('n', 'n', 1, columns, n, weight, k, 1, output_n);
-        }
+        im2col<scalar_t>(
+            input_n.data<scalar_t>(),
+            nInputPlane,
+            inputHeight,
+            inputWidth,
+            outputHeight,
+            outputWidth,
+            kH,
+            kW,
+            padH,
+            padW,
+            dH,
+            dW,
+            dilationH,
+            dilationW,
+            columns.data<scalar_t>());
+        
+        // For gemm argument derivation, see
+        // conv_dilated2d_all_cuda_template in
+        // ATen/native/cuda/DilatedConvolution.cu
+        THBlas_gemm<scalar_t>(
+            /*transa=*/'n',
+            /*transb=*/'n',
+            /*     m=*/columns.size(1),
+            /*     n=*/nOutputPlane,
+            /*     k=*/columns.size(0),
+            /* alpha=*/1,
+            /*     A=*/columns.data<scalar_t>(),
+            /*   lda=*/columns.size(1),
+            /*     B=*/weight.data<scalar_t>(),
+            /*   ldb=*/columns.size(0),
+            /*  beta=*/1,
+            /*     C=*/output_n.data<scalar_t>(),
+            /*   ldc=*/columns.size(1));
       } else {
         // All gradients
         grad_output_n = grad_output.select(0, elt);
@@ -560,32 +476,100 @@ void conv_dilated2d_all_cpu_template(
 
       // Gradient of input:
       if (grad_input.numel() > 0) {
-        int64_t n = columns.size(1);
-        int64_t m = nInputPlane * kW * kH;
-        int64_t k = nOutputPlane;
-        CALLGEMM('n', 't', 1, grad_output_n, n, weight, m, 0, columns);
+        // For gemm argument derivation, see
+        // conv_dilated2d_all_cuda_template in
+        // ATen/native/cuda/DilatedConvolution.cu
+        THBlas_gemm<scalar_t>(
+            /*transa=*/'n',
+            /*transb=*/'t',
+            /*     m=*/columns.size(1),
+            /*     n=*/columns.size(0),
+            /*     k=*/nOutputPlane,
+            /* alpha=*/1,
+            /*     A=*/grad_output_n.data<scalar_t>(), // op(A) is m x k
+            /*   lda=*/columns.size(1),
+            /*     B=*/weight.data<scalar_t>(), // op(B) is k x n
+            /*   ldb=*/columns.size(0),
+            /*  beta=*/0,
+            /*     C=*/columns.data<scalar_t>(), // C is m x n
+            /*   ldc=*/columns.size(1));
         // Unpack columns back into input:
         grad_input_n = grad_input.select(0, elt);
-        CALLCOL2IM(columns, grad_input_n);
+        col2im<scalar_t>(
+            columns.data<scalar_t>(),
+            nInputPlane,
+            inputHeight,
+            inputWidth,
+            outputHeight,
+            outputWidth,
+            kH,
+            kW,
+            padH,
+            padW,
+            dH,
+            dW,
+            dilationH,
+            dilationW,
+            grad_input_n.data<scalar_t>());
       }
 
       // Gradient of weight:
       if (grad_weight.numel() > 0) {
-        int64_t n = nInputPlane * kW * kH;
-        int64_t m = nOutputPlane;
-        int64_t k = columns.size(1);
-        scalar_t scale = 1; // TODO: expose as argument
+        scalar_t scale = 1; // TODO: expose as argument?
         // Extract columns:
-        CALLIM2COL(input_n, columns);
-        CALLGEMM('t', 'n', scale, columns, k, grad_output_n, k, 1, grad_weight);
+        im2col<scalar_t>(
+            input_n.data<scalar_t>(),
+            nInputPlane,
+            inputHeight,
+            inputWidth,
+            outputHeight,
+            outputWidth,
+            kH,
+            kW,
+            padH,
+            padW,
+            dH,
+            dW,
+            dilationH,
+            dilationW,
+            columns.data<scalar_t>());
+        // For gemm argument derivation, see
+        // conv_dilated2d_all_cuda_template in
+        // ATen/native/cuda/DilatedConvolution.cu
+        THBlas_gemm<scalar_t>(
+            /*transa=*/'t',
+            /*transb=*/'n',
+            /*     m=*/columns.size(0),
+            /*     n=*/nOutputPlane,
+            /*     k=*/columns.size(1),
+            /* alpha=*/scale,
+            /*     A=*/columns.data<scalar_t>(),
+            /*   lda=*/columns.size(1),
+            /*     B=*/grad_output_n.data<scalar_t>(),
+            /*   ldb=*/columns.size(1),
+            /*  beta=*/1,
+            /*     C=*/grad_weight.data<scalar_t>(),
+            /*   ldc=*/columns.size(0));
       }
 
       // Gradient of bias:
       if (grad_bias.numel() > 0) {
-        int64_t m = outputHeight * outputWidth;
-        int64_t n = nOutputPlane;
-        scalar_t scale = 1; // TODO: expose as argument
-        CALLGEMV('t', scale, grad_output_n, m, ones, 1, grad_bias);
+        scalar_t scale = 1; // TODO: expose as argument?
+        // For gemm argument derivation, see
+        // conv_dilated2d_all_cuda_template in
+        // ATen/native/cuda/DilatedConvolution.cu
+        THBlas_gemv<scalar_t>(
+            /* trans=*/'t',
+            /*     m=*/outputHeight * outputWidth,
+            /*     n=*/nOutputPlane,
+            /* alpha=*/scale,
+            /*     A=*/grad_output_n.data<scalar_t>(),
+            /*   lda=*/outputHeight * outputWidth,
+            /*     x=*/ones.data<scalar_t>(),
+            /*  incx=*/1,
+            /*  beta=*/1,
+            /*     y=*/grad_bias.data<scalar_t>(),
+            /*  incy=*/1);
       }
     }
   });
@@ -702,21 +686,66 @@ void conv_dilated3d_all_cpu_template(
       if (output.numel() > 0) {
         output_n = output.select(0, elt);
         if (bias.numel() > 0) {
-          int64_t n = outputDepth * outputHeight * outputWidth;
-          int64_t m = nOutputPlane;
-          int64_t k = 1;
-          CALLGEMM('t', 'n', 1, ones, k, bias, k, 0, output_n);
+          // For gemm argument derivation, see
+          // conv_dilated2d_all_cuda_template in
+          // ATen/native/cuda/DilatedConvolution.cu
+          THBlas_gemm<scalar_t>(
+              /*transa=*/'t',
+              /*transb=*/'n',
+              /*     m=*/outputDepth * outputHeight * outputWidth,
+              /*     n=*/nOutputPlane,
+              /*     k=*/1,
+              /* alpha=*/1,
+              /*     A=*/ones.data<scalar_t>(),
+              /*   lda=*/1,
+              /*     B=*/bias.data<scalar_t>(),
+              /*   ldb=*/1,
+              /*  beta=*/0,
+              /*     C=*/output_n.data<scalar_t>(),
+              /*   ldc=*/outputDepth * outputHeight * outputWidth);
         } else {
           output_n.zero_();
         }
         // Extract columns:
-        CALLVOL2COL(input_n, columns);
-        {
-          int64_t n = outputDepth * outputHeight * outputWidth;
-          int64_t m = nOutputPlane;
-          int64_t k = nInputPlane * kD * kH * kW;
-          CALLGEMM('n', 'n', 1, columns, n, weight, k, 1, output_n);
-        }
+        vol2col<scalar_t>(
+            input_n.data<scalar_t>(),
+            nInputPlane,
+            inputDepth,
+            inputHeight,
+            inputWidth,
+            outputDepth,
+            outputHeight,
+            outputWidth,
+            kD,
+            kH,
+            kW,
+            padD,
+            padH,
+            padW,
+            dD,
+            dH,
+            dW,
+            dilationD,
+            dilationH,
+            dilationW,
+            columns.data<scalar_t>());
+        // For gemm argument derivation, see
+        // conv_dilated2d_all_cuda_template in
+        // ATen/native/cuda/DilatedConvolution.cu
+        THBlas_gemm<scalar_t>(
+            /*transa=*/'n',
+            /*transb=*/'n',
+            /*     m=*/columns.size(1),
+            /*     n=*/nOutputPlane,
+            /*     k=*/columns.size(0),
+            /* alpha=*/1,
+            /*     A=*/columns.data<scalar_t>(),
+            /*   lda=*/columns.size(1),
+            /*     B=*/weight.data<scalar_t>(),
+            /*   ldb=*/columns.size(0),
+            /*  beta=*/1,
+            /*     C=*/output_n.data<scalar_t>(),
+            /*   ldc=*/columns.size(1));
       } else {
         // All gradients
         grad_output_n = grad_output.select(0, elt);
@@ -724,32 +753,113 @@ void conv_dilated3d_all_cpu_template(
 
       // Gradient of input:
       if (grad_input.numel() > 0) {
-        int64_t n = columns.size(1);
-        int64_t m = nInputPlane * kW * kH * kD;
-        int64_t k = nOutputPlane;
-        CALLGEMM('n', 't', 1, grad_output_n, n, weight, m, 0, columns);
+        // For gemm argument derivation, see
+        // conv_dilated2d_all_cuda_template in
+        // ATen/native/cuda/DilatedConvolution.cu
+        THBlas_gemm<scalar_t>(
+            /*transa=*/'n',
+            /*transb=*/'t',
+            /*     m=*/columns.size(1),
+            /*     n=*/columns.size(0),
+            /*     k=*/nOutputPlane,
+            /* alpha=*/1,
+            /*     A=*/grad_output_n.data<scalar_t>(),
+            /*   lda=*/columns.size(1),
+            /*     B=*/weight.data<scalar_t>(),
+            /*   ldb=*/columns.size(0),
+            /*  beta=*/0,
+            /*     C=*/columns.data<scalar_t>(),
+            /*   ldc=*/columns.size(1));
+
         // Unpack columns back into input:
         grad_input_n = grad_input.select(0, elt);
-        CALLCOL2VOL(columns, grad_input_n);
+        col2vol<scalar_t>(
+            columns.data<scalar_t>(),
+            nInputPlane,
+            inputDepth,
+            inputHeight,
+            inputWidth,
+            outputDepth,
+            outputHeight,
+            outputWidth,
+            kD,
+            kH,
+            kW,
+            padD,
+            padH,
+            padW,
+            dD,
+            dH,
+            dW,
+            dilationD,
+            dilationH,
+            dilationW,
+            grad_input_n.data<scalar_t>());
       }
 
       // Gradient of weight:
       if (grad_weight.numel() > 0) {
-        int64_t n = nInputPlane * kW * kH * kD;
-        int64_t m = nOutputPlane;
-        int64_t k = columns.size(1);
         scalar_t scale = 1; // TODO: expose as argument?
         // Extract columns:
-        CALLVOL2COL(input_n, columns);
-        CALLGEMM('t', 'n', scale, columns, k, grad_output_n, k, 1, grad_weight);
+        vol2col<scalar_t>(
+            input_n.data<scalar_t>(),
+            nInputPlane,
+            inputDepth,
+            inputHeight,
+            inputWidth,
+            outputDepth,
+            outputHeight,
+            outputWidth,
+            kD,
+            kH,
+            kW,
+            padD,
+            padH,
+            padW,
+            dD,
+            dH,
+            dW,
+            dilationD,
+            dilationH,
+            dilationW,
+            columns.data<scalar_t>());
+        // For gemm argument derivation, see
+        // conv_dilated2d_all_cuda_template in
+        // ATen/native/cuda/DilatedConvolution.cu
+        THBlas_gemm<scalar_t>(
+            /*transa=*/'t',
+            /*transb=*/'n',
+            /*     m=*/columns.size(0),
+            /*     n=*/nOutputPlane,
+            /*     k=*/columns.size(1),
+            /* alpha=*/scale,
+            /*     A=*/columns.data<scalar_t>(),
+            /*   lda=*/columns.size(1),
+            /*     B=*/grad_output_n.data<scalar_t>(),
+            /*   ldb=*/columns.size(1),
+            /*  beta=*/1,
+            /*     C=*/grad_weight.data<scalar_t>(),
+            /*   ldc=*/columns.size(0));
       }
 
       // Gradient of bias:
       if (grad_bias.numel() > 0) {
-        int64_t m = outputDepth * outputHeight * outputWidth;
-        int64_t n = nOutputPlane;
         scalar_t scale = 1; // TODO: expose as argument?
-        CALLGEMV('t', scale, grad_output_n, m, ones, 1, grad_bias);
+        // For gemv argument derivation, see
+        // conv_dilated2d_all_cuda_template in
+        // ATen/native/cuda/DilatedConvolution.cu
+        THBlas_gemv<scalar_t>(
+            /* trans=*/'t',
+            /*     m=*/outputDepth * outputHeight * outputWidth,
+            /*     n=*/nOutputPlane,
+            /* alpha=*/scale,
+            /*     A=*/grad_output_n.data<scalar_t>(),
+            /*   lda=*/outputDepth * outputHeight * outputWidth,
+            /*     x=*/ones.data<scalar_t>(),
+            /*  incx=*/1,
+            /*  beta=*/1,
+            /*     y=*/grad_bias.data<scalar_t>(),
+            /*  incy=*/1);
       }
     }
   });
@@ -776,10 +886,10 @@ std::tuple<Tensor&, Tensor&, Tensor&> conv_dilated2d_out_cpu(
     IntArrayRef pad_size,
     IntArrayRef dilation_size) {
   auto options = input.options();
-  Tensor grad_output = at::empty({0}, options);  // not used
-  Tensor grad_input = at::empty({0}, options);   // not used
-  Tensor grad_weight = at::empty({0}, options);  // not used
-  Tensor grad_bias = at::empty({0}, options);    // not used
+  Tensor grad_output = at::empty({0}, options); // not used
+  Tensor grad_input = at::empty({0}, options); // not used
+  Tensor grad_weight = at::empty({0}, options); // not used
+  Tensor grad_bias = at::empty({0}, options); // not used
   int64_t nOutputPlane = weight.size(0);
   int64_t outputHeight = OUTPUTSIZE(0, 2);
   int64_t outputWidth = OUTPUTSIZE(1, 2);
@@ -1074,17 +1184,3 @@ std::tuple<Tensor, Tensor, Tensor> conv_dilated3d_backward_cpu(
 
 } // namespace native
 } // namespace at
-
-#undef CALLGEMM
-#undef CALLGEMV
-#undef CALLIM2COL
-#undef CALLCOL2IM
-#undef CALLVOL2COL
-#undef CALLCOL2VOL
-#undef CALL_TEMPLATE
-#undef CALL_OUT
-#undef CALL_FORWARD_OUT
-#undef CALL_BACKWARD_OUT
-#undef INSERT_BATCH_DIMENSION
-#undef DROP_BATCH_DIMENSION
-#undef OUTPUTSIZE

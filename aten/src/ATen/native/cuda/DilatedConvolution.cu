@@ -24,158 +24,6 @@
       " but got input to be of shape ",              \
       T.sizes())
 
-#define CALLGEMM(TA, TB, ALPHA, A, N, B, M, BETA, C) \
-  {                                                  \
-    auto* A##_ptr = A.data<scalar_t>();              \
-    auto* B##_ptr = B.data<scalar_t>();              \
-    auto* C##_ptr = C.data<scalar_t>();              \
-    at::cuda::blas::gemm<scalar_t>(                  \
-        stream,                                      \
-        TA,                                          \
-        TB,                                          \
-        n,                                           \
-        m,                                           \
-        k,                                           \
-        ALPHA,                                       \
-        A##_ptr,                                     \
-        N,                                           \
-        B##_ptr,                                     \
-        M,                                           \
-        BETA,                                        \
-        C##_ptr,                                     \
-        n);                                          \
-  }
-
-#define CALLGEMV(TA, ALPHA, A, K, X, BETA, Y) \
-  {                                           \
-    auto* A##_ptr = A.data<scalar_t>();       \
-    auto* X##_ptr = X.data<scalar_t>();       \
-    auto* Y##_ptr = Y.data<scalar_t>();       \
-    at::cuda::blas::gemv<scalar_t>(           \
-        stream,                               \
-        TA,                                   \
-        m,                                    \
-        n,                                    \
-        ALPHA,                                \
-        A##_ptr,                              \
-        K,                                    \
-        X##_ptr,                              \
-        1,                                    \
-        BETA,                                 \
-        Y##_ptr,                              \
-        1);                                   \
-  }
-
-/*
-  The following CALL... macros are for convenience of this source file
-  only. These should be replaced with ATen native functions as soon as
-  col2im, im2col, gemm, and gemv are ported.
- */
-
-#define CALLIM2COL(IM, COL)                 \
-  {                                         \
-    auto* COL##_ptr = COL.data<scalar_t>(); \
-    auto* IM##_ptr = IM.data<scalar_t>();   \
-    im2col<scalar_t>(                       \
-        stream,                             \
-        IM##_ptr,                           \
-        nInputPlane,                        \
-        inputHeight,                        \
-        inputWidth,                         \
-        outputHeight,                       \
-        outputWidth,                        \
-        kH,                                 \
-        kW,                                 \
-        padH,                               \
-        padW,                               \
-        dH,                                 \
-        dW,                                 \
-        dilationH,                          \
-        dilationW,                          \
-        COL##_ptr);                         \
-  }
-
-#define CALLCOL2IM(COL, IM)                       \
-  {                                               \
-    const auto* COL##_ptr = COL.data<scalar_t>(); \
-    auto* IM##_ptr = IM.data<scalar_t>();         \
-    col2im<scalar_t, scalar_t>(                   \
-        stream,                                   \
-        COL##_ptr,                                \
-        nInputPlane,                              \
-        inputHeight,                              \
-        inputWidth,                               \
-        outputHeight,                             \
-        outputWidth,                              \
-        kH,                                       \
-        kW,                                       \
-        padH,                                     \
-        padW,                                     \
-        dH,                                       \
-        dW,                                       \
-        dilationH,                                \
-        dilationW,                                \
-        IM##_ptr);                                \
-  }
-
-#define CALLVOL2COL(VOL, COL)                     \
-  {                                               \
-    auto* COL##_ptr = COL.data<scalar_t>();       \
-    const auto* VOL##_ptr = VOL.data<scalar_t>(); \
-    vol2col<scalar_t>(                            \
-        stream,                                   \
-        VOL##_ptr,                                \
-        nInputPlane,                              \
-        inputDepth,                               \
-        inputHeight,                              \
-        inputWidth,                               \
-        outputDepth,                              \
-        outputHeight,                             \
-        outputWidth,                              \
-        kD,                                       \
-        kH,                                       \
-        kW,                                       \
-        padD,                                     \
-        padH,                                     \
-        padW,                                     \
-        dD,                                       \
-        dH,                                       \
-        dW,                                       \
-        dilationD,                                \
-        dilationH,                                \
-        dilationW,                                \
-        COL##_ptr);                               \
-  }
-
-#define CALLCOL2VOL(COL, VOL)                     \
-  {                                               \
-    const auto* COL##_ptr = COL.data<scalar_t>(); \
-    auto* VOL##_ptr = VOL.data<scalar_t>();       \
-    col2vol<scalar_t, scalar_t>(                  \
-        stream,                                   \
-        COL##_ptr,                                \
-        nInputPlane,                              \
-        inputDepth,                               \
-        inputHeight,                              \
-        inputWidth,                               \
-        outputDepth,                              \
-        outputHeight,                             \
-        outputWidth,                              \
-        kD,                                       \
-        kH,                                       \
-        kW,                                       \
-        padD,                                     \
-        padH,                                     \
-        padW,                                     \
-        dD,                                       \
-        dH,                                       \
-        dW,                                       \
-        dilationD,                                \
-        dilationH,                                \
-        dilationW,                                \
-        VOL##_ptr);                               \
-  }
-
 /*
   Some convenience macros
  */
@@ -608,21 +456,100 @@ void conv_dilated2d_all_cuda_template(
           if (output.numel() > 0) {
             output_n = output.select(0, elt);
             if (bias.numel() > 0) {
-              int64_t n = outputHeight * outputWidth;
-              int64_t m = nOutputPlane;
-              int64_t k = 1;
-              CALLGEMM('t', 'n', 1, ones, k, bias, k, 0, output_n);
+              /*
+                Compute:
+
+                  output_n = bias * ones^T
+
+                where
+
+                  bias is viewed as bias.view(nOutputPlane, 1)
+
+                  ones is viewed as ones.view(outputHeight * outputWidth, 1)
+
+                  output_n is viewed as output_n.view(nOutputPlane, outputHeight
+              * outputWidth)
+
+              gemm assumes column-major matrices:
+
+                output_n^T = ones * bias^T
+                C = alpha * op(A) * op(B)
+                op(A) = 't', op(B) = 'n', alpha=1, beta=0
+              */
+              at::cuda::blas::gemm<scalar_t>(
+                  stream,
+                  /*transa=*/'t',
+                  /*transb=*/'n',
+                  /*     m=*/outputHeight * outputWidth,
+                  /*     n=*/nOutputPlane,
+                  /*     k=*/1,
+                  /* alpha=*/1,
+                  /*     A=*/ones.data<scalar_t>(),
+                  /*   lda=*/1,
+                  /*     B=*/bias.data<scalar_t>(),
+                  /*   ldb=*/1,
+                  /*  beta=*/0,
+                  /*     C=*/output_n.data<scalar_t>(),
+                  /*   ldc=*/outputHeight * outputWidth);
             } else {
               output_n.zero_();
             }
             // Extract columns:
-            CALLIM2COL(input_n, columns);
-            {
-              int64_t n = outputHeight * outputWidth;
-              int64_t m = nOutputPlane;
-              int64_t k = nInputPlane * kH * kW;
-              CALLGEMM('n', 'n', 1, columns, n, weight, k, 1, output_n);
-            }
+            im2col<scalar_t>(
+                stream,
+                input_n.data<scalar_t>(),
+                nInputPlane,
+                inputHeight,
+                inputWidth,
+                outputHeight,
+                outputWidth,
+                kH,
+                kW,
+                padH,
+                padW,
+                dH,
+                dW,
+                dilationH,
+                dilationW,
+                columns.data<scalar_t>());
+
+            /*
+              Compute:
+
+                output_n = weight * columns + output_n
+
+              where
+
+                weight is viewed as weight.view(nOutputPlane, nInputPlane * kD *
+              kH * kW)
+
+                columns size is (nInputPlane * kH * kW) x (outputHeight *
+              outputWidth)
+
+                output_n is viewed as output_n.view(nOutputPlane, outputHeight *
+              outputWidth)
+
+              gemm assumes column-major matrices:
+
+                output_n^T = columns^T * weight^T + output_n^T
+                C = alpha * op(A) * op(B) + beta * C
+                op(A) = 'n', op(B) = 'n', alpha=1, beta=1
+            */
+            at::cuda::blas::gemm<scalar_t>(
+                stream,
+                /*transa=*/'n',
+                /*transb=*/'n',
+                /*     m=*/columns.size(1),
+                /*     n=*/nOutputPlane,
+                /*     k=*/columns.size(0),
+                /* alpha=*/1,
+                /*     A=*/columns.data<scalar_t>(),
+                /*   lda=*/columns.size(1),
+                /*     B=*/weight.data<scalar_t>(),
+                /*   ldb=*/columns.size(0),
+                /*  beta=*/1,
+                /*     C=*/output_n.data<scalar_t>(),
+                /*   ldc=*/columns.size(1));
           } else {
             // All gradients
             grad_output_n = grad_output.select(0, elt);
@@ -630,32 +557,161 @@ void conv_dilated2d_all_cuda_template(
 
           // Gradient of input:
           if (grad_input.numel() > 0) {
-            int64_t n = columns.size(1);
-            int64_t m = nInputPlane * kW * kH;
-            int64_t k = nOutputPlane;
-            CALLGEMM('n', 't', 1, grad_output_n, n, weight, m, 0, columns);
+            /*
+              Compute:
+
+                columns = weight^T * grad_output_n
+
+              where
+
+                weight is viewed as weight.view(nOutputPlane, nInputPlane * kH *
+              kW)
+
+                grad_output_n is viewed as grad_output_n.view(nOutputPlane,
+              outputHeight * outputWidth)
+
+                columns size is (nInputPlane * kH * kW) x (outputHeight *
+              outputWidth)
+
+              gemm assumes column-major matrices:
+
+                columns^T = grad_output_n^T * weight
+                C = alpha * op(A) * op(B) + beta * C
+                op(A) = 'n', op(B) = 't', alpha=1, beta=0
+             */
+            at::cuda::blas::gemm<scalar_t>(
+                stream,
+                /*transa=*/'n',
+                /*transb=*/'t',
+                /*     m=*/columns.size(1),
+                /*     n=*/columns.size(0),
+                /*     k=*/nOutputPlane,
+                /* alpha=*/1,
+                /*     A=*/grad_output_n.data<scalar_t>(), // op(A) is m x k
+                /*   lda=*/columns.size(1),
+                /*     B=*/weight.data<scalar_t>(), // op(B) is k x n
+                /*   ldb=*/columns.size(0),
+                /*  beta=*/0,
+                /*     C=*/columns.data<scalar_t>(), // C is m x n
+                /*   ldc=*/columns.size(1));
+
             // Unpack columns back into input:
             grad_input_n = grad_input.select(0, elt);
-            CALLCOL2IM(columns, grad_input_n);
+            col2im<scalar_t, scalar_t>(
+                stream,
+                columns.data<scalar_t>(),
+                nInputPlane,
+                inputHeight,
+                inputWidth,
+                outputHeight,
+                outputWidth,
+                kH,
+                kW,
+                padH,
+                padW,
+                dH,
+                dW,
+                dilationH,
+                dilationW,
+                grad_input_n.data<scalar_t>());
           }
 
           // Gradient of weight:
           if (grad_weight.numel() > 0) {
-            int64_t n = nInputPlane * kW * kH;
-            int64_t m = nOutputPlane;
-            int64_t k = columns.size(1);
-            scalar_t scale = 1; // TODO: expose as argument
+            scalar_t scale = 1; // TODO: expose as argument?
             // Extract columns:
-            CALLIM2COL(input_n, columns);
-            CALLGEMM('t', 'n', scale, columns, k, grad_output_n, k, 1, grad_weight);
+            im2col<scalar_t>(
+                stream,
+                input_n.data<scalar_t>(),
+                nInputPlane,
+                inputHeight,
+                inputWidth,
+                outputHeight,
+                outputWidth,
+                kH,
+                kW,
+                padH,
+                padW,
+                dH,
+                dW,
+                dilationH,
+                dilationW,
+                columns.data<scalar_t>());
+
+            /*
+              Compute:
+
+                grad_weight = scale * grad_output_n * columns^T + grad_weight
+
+              where
+
+                grad_output_n is viewed as grad_output_n.view(nOutputPlane,
+              outputHeight * outputWidth)
+
+                columns size is (nInputPlane * kD * kH * kW) x (outputHeight *
+              outputWidth)
+
+                grad_weight is viewed as grad_weight.view(nOutputPlane,
+              nInputPlane * kH * kW)
+
+              gemm assumes column-major matrices:
+
+                grad_weight^T = scale * columns * grad_output_n^T +
+              grad_weight^T C = alpha * op(A) * op(B) + beta * C op(A) = 't',
+              op(B) = 'n', alpha=scale, beta=1
+            */
+            at::cuda::blas::gemm<scalar_t>(
+                stream,
+                /*transa=*/'t',
+                /*transb=*/'n',
+                /*     m=*/columns.size(0),
+                /*     n=*/nOutputPlane,
+                /*     k=*/columns.size(1),
+                /* alpha=*/scale,
+                /*     A=*/columns.data<scalar_t>(),
+                /*   lda=*/columns.size(1),
+                /*     B=*/grad_output_n.data<scalar_t>(),
+                /*   ldb=*/columns.size(1),
+                /*  beta=*/1,
+                /*     C=*/grad_weight.data<scalar_t>(),
+                /*   ldc=*/columns.size(0));
           }
 
           // Gradient of bias:
           if (grad_bias.numel() > 0) {
-            int64_t m = outputHeight * outputWidth;
-            int64_t n = nOutputPlane;
             scalar_t scale = 1; // TODO: expose as argument
-            CALLGEMV('t', scale, grad_output_n, m, ones, 1, grad_bias);
+            /*
+              Compute:
+                grad_bias = scale * grad_output_n * ones + grad_bias
+
+              where
+
+                grad_bias is viewed as grad_bias.view(nOutputPlane, 1)
+
+                ones is viewed as ones.view(outputHeight * outputWidth, 1)
+
+                grad_output_n is viewed as grad_output_n.view(nOutputPlane,
+              outputHeight * outputWidth)
+
+              gemm assumes column-major matrices:
+
+                grad_bias^T = scale * grad_output_n * ones + grad_bias^T
+                y = alpha * op(A) * x + beta * y
+                op(A) = 't', alpha=scale, beta=1
+             */
+            at::cuda::blas::gemv<scalar_t>(
+                stream,
+                /* trans=*/'t',
+                /*     m=*/outputHeight * outputWidth,
+                /*     n=*/nOutputPlane,
+                /* alpha=*/scale,
+                /*     A=*/grad_output_n.data<scalar_t>(),
+                /*   lda=*/outputHeight * outputWidth,
+                /*     x=*/ones.data<scalar_t>(),
+                /*  incx=*/1,
+                /*  beta=*/1,
+                /*     y=*/grad_bias.data<scalar_t>(),
+                /*  incy=*/1);
           }
         }
       });
@@ -809,21 +865,71 @@ void conv_dilated3d_all_cuda_template(
           if (output.numel() > 0) {
             output_n = output.select(0, elt);
             if (bias.numel() > 0) {
-              int64_t n = outputDepth * outputHeight * outputWidth;
-              int64_t m = nOutputPlane;
-              int64_t k = 1;
-              CALLGEMM('t', 'n', 1, ones, k, bias, k, 0, output_n);
+              // Tensor is based on row-major ordering, but gemm
+              // assumes column-major matrices, hence the choise of
+              // trans operations and swapped sizes:
+              at::cuda::blas::gemm<scalar_t>(
+                  stream,
+                  /*transa=*/'t',
+                  /*transb=*/'n',
+                  /*     m=*/outputDepth * outputHeight * outputWidth,
+                  /*     n=*/nOutputPlane,
+                  /*     k=*/1,
+                  /* alpha=*/1,
+                  /*     A=*/ones.data<scalar_t>(),
+                  /*   lda=*/1,
+                  /*     B=*/bias.data<scalar_t>(),
+                  /*   ldb=*/1,
+                  /*  beta=*/0,
+                  /*     C=*/output_n.data<scalar_t>(),
+                  /*   ldc=*/outputDepth * outputHeight * outputWidth);
             } else {
               output_n.zero_();
             }
             // Extract columns:
-            CALLVOL2COL(input_n, columns);
-            {
-              int64_t n = outputDepth * outputHeight * outputWidth;
-              int64_t m = nOutputPlane;
-              int64_t k = nInputPlane * kD * kH * kW;
-              CALLGEMM('n', 'n', 1, columns, n, weight, k, 1, output_n);
-            }
+            vol2col<scalar_t>(
+                stream,
+                input_n.data<scalar_t>(),
+                nInputPlane,
+                inputDepth,
+                inputHeight,
+                inputWidth,
+                outputDepth,
+                outputHeight,
+                outputWidth,
+                kD,
+                kH,
+                kW,
+                padD,
+                padH,
+                padW,
+                dD,
+                dH,
+                dW,
+                dilationD,
+                dilationH,
+                dilationW,
+                columns.data<scalar_t>());
+
+            // Tensor is based on row-major ordering, but gemm
+            // assumes column-major matrices, hence the choise of
+            // trans operations and swapped sizes:
+            at::cuda::blas::gemm<scalar_t>(
+                stream,
+                /*transa=*/'n',
+                /*transb=*/'n',
+                /*     m=*/columns.size(1),
+                /*     n=*/nOutputPlane,
+                /*     k=*/columns.size(0),
+                /* alpha=*/1,
+                /*     A=*/columns.data<scalar_t>(),
+                /*   lda=*/columns.size(1),
+                /*     B=*/weight.data<scalar_t>(),
+                /*   ldb=*/columns.size(0),
+                /*  beta=*/1,
+                /*     C=*/output_n.data<scalar_t>(),
+                /*   ldc=*/columns.size(1));
+
           } else {
             // All gradients
             grad_output_n = grad_output.select(0, elt);
@@ -831,32 +937,118 @@ void conv_dilated3d_all_cuda_template(
 
           // Gradient of input:
           if (grad_input.numel() > 0) {
-            int64_t n = columns.size(1);
-            int64_t m = nInputPlane * kW * kH * kD;
-            int64_t k = nOutputPlane;
-            CALLGEMM('n', 't', 1, grad_output_n, n, weight, m, 0, columns);
+            // Tensor is based on row-major ordering, but gemm
+            // assumes column-major matrices, hence the choise of
+            // trans operations and swapped sizes:
+            at::cuda::blas::gemm<scalar_t>(
+                stream,
+                /*transa=*/'n',
+                /*transb=*/'t',
+                /*     m=*/columns.size(1),
+                /*     n=*/columns.size(0),
+                /*     k=*/nOutputPlane,
+                /* alpha=*/1,
+                /*     A=*/grad_output_n.data<scalar_t>(),
+                /*   lda=*/columns.size(1),
+                /*     B=*/weight.data<scalar_t>(),
+                /*   ldb=*/columns.size(0),
+                /*  beta=*/0,
+                /*     C=*/columns.data<scalar_t>(),
+                /*   ldc=*/columns.size(1));
             // Unpack columns back into input:
             grad_input_n = grad_input.select(0, elt);
-            CALLCOL2VOL(columns, grad_input_n);
+            col2vol<scalar_t, scalar_t>(
+                stream,
+                columns.data<scalar_t>(),
+                nInputPlane,
+                inputDepth,
+                inputHeight,
+                inputWidth,
+                outputDepth,
+                outputHeight,
+                outputWidth,
+                kD,
+                kH,
+                kW,
+                padD,
+                padH,
+                padW,
+                dD,
+                dH,
+                dW,
+                dilationD,
+                dilationH,
+                dilationW,
+                grad_input_n.data<scalar_t>());
           }
 
           // Gradient of weight:
           if (grad_weight.numel() > 0) {
-            int64_t n = nInputPlane * kW * kH * kD;
-            int64_t m = nOutputPlane;
-            int64_t k = columns.size(1);
-            scalar_t scale = 1; // TODO: expose as argument
             // Extract columns:
-            CALLVOL2COL(input_n, columns);
-            CALLGEMM('t', 'n', scale, columns, k, grad_output_n, k, 1, grad_weight);
+            vol2col<scalar_t>(
+                stream,
+                input_n.data<scalar_t>(),
+                nInputPlane,
+                inputDepth,
+                inputHeight,
+                inputWidth,
+                outputDepth,
+                outputHeight,
+                outputWidth,
+                kD,
+                kH,
+                kW,
+                padD,
+                padH,
+                padW,
+                dD,
+                dH,
+                dW,
+                dilationD,
+                dilationH,
+                dilationW,
+                columns.data<scalar_t>());
+
+            scalar_t scale = 1; // TODO: expose as argument?
+            // Tensor is based on row-major ordering, but gemm
+            // assumes column-major matrices, hence the choise of
+            // trans operations and swapped sizes:
+            at::cuda::blas::gemm<scalar_t>(
+                stream,
+                /*transa=*/'t',
+                /*transb=*/'n',
+                /*     m=*/columns.size(0),
+                /*     n=*/nOutputPlane,
+                /*     k=*/columns.size(1),
+                /* alpha=*/scale,
+                /*     A=*/columns.data<scalar_t>(),
+                /*   lda=*/columns.size(1),
+                /*     B=*/grad_output_n.data<scalar_t>(),
+                /*   ldb=*/columns.size(1),
+                /*  beta=*/1,
+                /*     C=*/grad_weight.data<scalar_t>(),
+                /*   ldc=*/columns.size(0));
           }
 
           // Gradient of bias:
           if (grad_bias.numel() > 0) {
-            int64_t m = outputDepth * outputHeight * outputWidth;
-            int64_t n = nOutputPlane;
-            scalar_t scale = 1; // TODO: expose as argument
-            CALLGEMV('t', scale, grad_output_n, m, ones, 1, grad_bias);
+            scalar_t scale = 1; // TODO: expose as argument?
+            // Tensor is based on row-major ordering, but gemv
+            // assumes column-major matrices, hence the choise of
+            // trans operations and swapped sizes:
+            at::cuda::blas::gemv<scalar_t>(
+                stream,
+                /* trans=*/'t',
+                /*     m=*/outputDepth * outputHeight * outputWidth,
+                /*     n=*/nOutputPlane,
+                /* alpha=*/scale,
+                /*     A=*/grad_output_n.data<scalar_t>(),
+                /*   lda=*/outputDepth * outputHeight * outputWidth,
+                /*     x=*/ones.data<scalar_t>(),
+                /*  incx=*/1,
+                /*  beta=*/1,
+                /*     y=*/grad_bias.data<scalar_t>(),
+                /*  incy=*/1);
           }
         }
       });
@@ -941,8 +1133,8 @@ std::tuple<Tensor&, Tensor&, Tensor&> conv_dilated2d_forward_out_cuda(
     IntArrayRef stride_size,
     IntArrayRef pad_size,
     IntArrayRef dilation_size) {
-  std::cout << "NOT IMPLEMENTED: conv_dilated2d_forward_out_cuda3" << std::endl;
-  CALL_OUT(2); // Is this correct??
+  // Is this function dead?
+  CALL_OUT(2);
   return std::tie(output, columns, ones);
 }
 
@@ -955,10 +1147,10 @@ Tensor& conv_dilated2d_forward_out_cuda(
     IntArrayRef stride_size,
     IntArrayRef pad_size,
     IntArrayRef dilation_size) {
+  // Is this function dead?
   auto options = output.options();
   Tensor columns = at::empty({0}, options);
   Tensor ones = at::empty({0}, options);
-  std::cout << "NOT IMPLEMENTED: conv_dilated2d_forward_out_cuda1" << std::endl;
   CALL_FORWARD_OUT(2);
   return output;
 }
@@ -971,11 +1163,11 @@ std::tuple<Tensor, Tensor, Tensor> conv_dilated2d_forward_cuda(
     IntArrayRef stride_size,
     IntArrayRef pad_size,
     IntArrayRef dilation_size) {
+  // Is this function dead?
   auto options = input.options();
   Tensor output = at::empty({0}, options);
   Tensor columns = at::empty({0}, options);
   Tensor ones = at::empty({0}, options);
-  std::cout << "NOT IMPLEMENTED: conv_dilated2d_forward_cuda" << std::endl;
   CALL_FORWARD_OUT(2);
   return std::tie(output, columns, ones);
 }
@@ -1001,7 +1193,7 @@ std::tuple<Tensor&, Tensor&, Tensor&> conv_dilated2d_backward_out_cuda(
 
   grad_input.resize_(input.sizes());
   grad_weight.resize_(weight.sizes());
-  grad_bias.resize_(weight.size(0)); // TODO: is this correct?
+  grad_bias.resize_(weight.size(0));
   CALL_TEMPLATE(2);
   return std::tie(grad_input, grad_weight, grad_bias);
 }
@@ -1096,8 +1288,8 @@ std::tuple<Tensor&, Tensor&, Tensor&> conv_dilated3d_forward_out_cuda(
     IntArrayRef stride_size,
     IntArrayRef pad_size,
     IntArrayRef dilation_size) {
-  std::cout << "NOT IMPLEMENTED: conv_dilated3d_forward_out_cuda3" << std::endl;
-  CALL_OUT(3); // Is this correct??
+  // Is this function dead?
+  CALL_OUT(3);
   return std::tie(output, columns, ones);
 }
 
@@ -1110,10 +1302,10 @@ Tensor& conv_dilated3d_forward_out_cuda(
     IntArrayRef stride_size,
     IntArrayRef pad_size,
     IntArrayRef dilation_size) {
+  // Is this function dead?
   auto options = output.options();
   Tensor columns = at::empty({0}, options);
   Tensor ones = at::empty({0}, options);
-  std::cout << "NOT IMPLEMENTED: conv_dilated3d_forward_out_cuda1" << std::endl;
   CALL_FORWARD_OUT(3);
   return output;
 }
@@ -1126,11 +1318,11 @@ std::tuple<Tensor, Tensor, Tensor> conv_dilated3d_forward_cuda(
     IntArrayRef stride_size,
     IntArrayRef pad_size,
     IntArrayRef dilation_size) {
+  // Is this function dead?
   auto options = input.options();
   Tensor output = at::empty({0}, options);
   Tensor columns = at::empty({0}, options);
   Tensor ones = at::empty({0}, options);
-  std::cout << "NOT IMPLEMENTED: conv_dilated3d_forward_cuda" << std::endl;
   CALL_FORWARD_OUT(3);
   return std::tie(output, columns, ones);
 }
@@ -1155,7 +1347,7 @@ std::tuple<Tensor&, Tensor&, Tensor&> conv_dilated3d_backward_out_cuda(
   Tensor bias = at::empty({0}, options);
   grad_input.resize_(input.sizes());
   grad_weight.resize_(weight.sizes());
-  grad_bias.resize_(weight.size(0)); // TODO: is this correct?
+  grad_bias.resize_(weight.size(0));
   CALL_TEMPLATE(3);
   return std::tie(grad_input, grad_weight, grad_bias);
 }
@@ -1181,17 +1373,3 @@ std::tuple<Tensor, Tensor, Tensor> conv_dilated3d_backward_cuda(
 
 } // namespace native
 } // namespace at
-
-#undef CALLGEMM
-#undef CALLGEMV
-#undef CALLIM2COL
-#undef CALLCOL2IM
-#undef CALLVOL2COL
-#undef CALLCOL2VOL
-#undef CALL_TEMPLATE
-#undef CALL_OUT
-#undef CALL_FORWARD_OUT
-#undef CALL_BACKWARD_OUT
-#undef INSERT_BATCH_DIMENSION
-#undef DROP_BATCH_DIMENSION
-#undef OUTPUTSIZE
