@@ -31,10 +31,10 @@
 #define CALL_TEMPLATE(DIM)                \
   conv_dilated##DIM##d_all_cuda_template( \
       output,                             \
-      input,                              \
-      weight,                             \
-      bias,                               \
-      grad_output,                        \
+      input_,                              \
+      weight_,                             \
+      bias_,                               \
+      grad_output_,                        \
       grad_input,                         \
       grad_weight,                        \
       grad_bias,                          \
@@ -120,6 +120,7 @@ void conv_dilated_shape_check(
     const Tensor& weight,
     const Tensor& bias,
     const Tensor& grad_output,
+    const Tensor& grad_input,
     const Tensor& grad_weight,
     const Tensor& grad_bias,
     IntArrayRef kernel_size,
@@ -166,18 +167,9 @@ void conv_dilated_shape_check(
       "dilation should be greater than zero, but got ",
       dilation_size);
 
-  if (weight.defined()) {
-    TORCH_CHECK(
-        weight.dim() == dim + 2,
-        "non-empty ",
-        dim + 2,
-        "D weight tensor (nOutputPlane, nInputPlane, ..., kH, kW) expected, "
-        "but got ",
-        weight.sizes());
-    if (bias.defined()) {
-      TORCH_CHECK_DIM_SIZE(bias, 1, 0, weight.size(0));
-      TORCH_CHECK(bias.is_contiguous(), "bias needs to be contiguous");
-    }
+  if (bias.defined()) {
+    TORCH_CHECK_DIM_SIZE(bias, 1, 0, weight.size(0));
+    TORCH_CHECK(bias.is_contiguous(), "bias ought to be contiguous");
   }
 
   if (grad_weight.defined()) {
@@ -214,7 +206,7 @@ void conv_dilated_shape_check(
     dimw++;
   }
   TORCH_CHECK(
-      input.defined() && (ndim == dim + 2 || ndim == dim + 1),
+      (ndim == dim + 2 || ndim == dim + 1),
       "non-empty ",
       dim + 1,
       "D or ",
@@ -296,19 +288,16 @@ void conv_dilated_shape_check(
     default:
       TORCH_CHECK(false, "unexpected dim in conv_dilate shape check", dim);
   } // switch
-  if (weight.defined()) {
-    int64_t nInputPlane = weight.size(1);
-    TORCH_CHECK_DIM_SIZE(input, ndim, dimf, nInputPlane);
-  }
+
+  TORCH_CHECK_DIM_SIZE(input, ndim, dimf, weight.size(1));
 
   if (grad_output.defined()) {
-    if (weight.defined()) {
-      int64_t nOutputPlane = weight.size(0);
-      TORCH_CHECK_DIM_SIZE(grad_output, ndim, dimf, nOutputPlane);
-    } else if (bias.defined()) {
-      int64_t nOutputPlane = bias.size(0);
-      TORCH_CHECK_DIM_SIZE(grad_output, ndim, dimf, nOutputPlane);
-    }
+    TORCH_CHECK(grad_output.is_contiguous(), "grad_output ought to be contiguous");
+    TORCH_CHECK_DIM_SIZE(grad_output, ndim, dimf, weight.size(0));
+  }
+
+  if (grad_input.defined() || grad_weight.defined() || grad_bias.defined()) {
+    TORCH_CHECK(grad_output.defined(), "grad_output must be defined for gradients");
   }
 
   if (columns.defined()) {
@@ -326,8 +315,8 @@ void conv_dilated_shape_check(
 void conv_dilated2d_all_cuda_template(
     Tensor& output,
     const Tensor& input_,
-    const Tensor& weight_,
-    const Tensor& bias_,
+    const Tensor& weight,
+    const Tensor& bias,
     const Tensor& grad_output_,
     Tensor& grad_input,
     Tensor& grad_weight,
@@ -339,12 +328,15 @@ void conv_dilated2d_all_cuda_template(
     const Tensor& columns_,
     const Tensor& ones_) {
   cudaStream_t stream = at::cuda::getCurrentCUDAStream();
-  auto input = input_.contiguous();
-  auto weight = weight_.contiguous();
-  auto bias = bias_.contiguous();
-  auto grad_output = grad_output_.contiguous();
+  Tensor input = input_;
+  Tensor grad_output = grad_output_;
   Tensor columns = columns_;
   Tensor ones = ones_;
+
+  // Preliminary shape checks
+  TORCH_CHECK(input.defined(), "input must be defined");
+  TORCH_CHECK(weight.defined(), "weight must be defined");
+  TORCH_CHECK(weight.dim() == 4, "weight must be 4D tensor but got one with shape ", weight.sizes());
 
   bool is_batch = input.dim() == 3;
   if (is_batch) {
@@ -430,6 +422,7 @@ void conv_dilated2d_all_cuda_template(
       weight,
       bias,
       grad_output,
+      grad_input,
       grad_weight,
       grad_bias,
       kernel_size,
@@ -728,8 +721,8 @@ void conv_dilated2d_all_cuda_template(
 void conv_dilated3d_all_cuda_template(
     Tensor& output,
     const Tensor& input_,
-    const Tensor& weight_,
-    const Tensor& bias_,
+    const Tensor& weight,
+    const Tensor& bias,
     const Tensor& grad_output_,
     Tensor& grad_input,
     Tensor& grad_weight,
@@ -741,12 +734,15 @@ void conv_dilated3d_all_cuda_template(
     const Tensor& columns_,
     const Tensor& ones_) {
   cudaStream_t stream = at::cuda::getCurrentCUDAStream();
-  auto input = input_.contiguous();
-  auto weight = weight_.contiguous();
-  auto bias = bias_.contiguous();
-  auto grad_output = grad_output_.contiguous();
+  Tensor input = input_;
+  Tensor grad_output = grad_output_;
   Tensor columns = columns_;
   Tensor ones = ones_;
+
+  // Preliminary shape checks
+  TORCH_CHECK(input.defined(), "input must be defined");
+  TORCH_CHECK(weight.defined(), "weight must be defined");
+  TORCH_CHECK(weight.dim() == 5, "weight must be 5D tensor but got one with shape ", weight.sizes());
 
   bool is_batch = input.dim() == 4;
   if (is_batch) {
@@ -839,6 +835,7 @@ void conv_dilated3d_all_cuda_template(
       weight,
       bias,
       grad_output,
+      grad_input,
       grad_weight,
       grad_bias,
       kernel_size,
@@ -1076,7 +1073,10 @@ std::tuple<Tensor&, Tensor&, Tensor&> conv_dilated2d_out_cuda(
     IntArrayRef pad_size,
     IntArrayRef dilation_size) {
   auto options = input.options();
-  Tensor grad_output;
+  const Tensor weight_ = weight.contiguous();
+  const Tensor input_ = input.contiguous();
+  const Tensor bias_ = bias.contiguous();
+  Tensor grad_output_;
   Tensor grad_input;
   Tensor grad_weight;
   Tensor grad_bias;
@@ -1188,9 +1188,10 @@ std::tuple<Tensor&, Tensor&, Tensor&> conv_dilated2d_backward_out_cuda(
     const Tensor& ones) {
   auto options = grad_input.options();
   Tensor output;
-  Tensor columns_buf = columns;
-  Tensor ones_buf = ones;
-  Tensor bias;
+  Tensor bias_;
+  const Tensor grad_output_ = grad_output.contiguous();
+  const Tensor input_ = input.contiguous();
+  const Tensor weight_ = weight.contiguous();
   grad_input.resize_(input.sizes());
   grad_weight.resize_(weight.sizes());
   grad_bias.resize_(weight.size(0));
@@ -1229,7 +1230,10 @@ std::tuple<Tensor&, Tensor&, Tensor&> conv_dilated3d_out_cuda(
     IntArrayRef pad_size,
     IntArrayRef dilation_size) {
   auto options = input.options();
-  Tensor grad_output;
+  const Tensor input_ = input.contiguous();
+  const Tensor bias_ = bias.contiguous();
+  const Tensor weight_ = weight.contiguous();
+  Tensor grad_output_;
   Tensor grad_input;
   Tensor grad_weight;
   Tensor grad_bias;
@@ -1342,9 +1346,10 @@ std::tuple<Tensor&, Tensor&, Tensor&> conv_dilated3d_backward_out_cuda(
     const Tensor& ones) {
   auto options = grad_input.options();
   Tensor output;
-  Tensor columns_buf = columns;
-  Tensor ones_buf = ones;
-  Tensor bias;
+  Tensor bias_;
+  const Tensor grad_output_ = grad_output.contiguous();
+  const Tensor input_ = input.contiguous();
+  const Tensor weight_ = weight.contiguous();
   grad_input.resize_(input.sizes());
   grad_weight.resize_(weight.sizes());
   grad_bias.resize_(weight.size(0));
