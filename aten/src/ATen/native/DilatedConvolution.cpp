@@ -738,7 +738,7 @@ void conv_dilated3d_all_cpu_template(
         int64_t n = nInputPlane * kW * kH * kD;
         int64_t m = nOutputPlane;
         int64_t k = columns.size(1);
-        scalar_t scale = 1; // TODO: expose as argument
+        scalar_t scale = 1; // TODO: expose as argument?
         // Extract columns:
         CALLVOL2COL(input_n, columns);
         CALLGEMM('t', 'n', scale, columns, k, grad_output_n, k, 1, grad_weight);
@@ -748,7 +748,7 @@ void conv_dilated3d_all_cpu_template(
       if (grad_bias.numel() > 0) {
         int64_t m = outputDepth * outputHeight * outputWidth;
         int64_t n = nOutputPlane;
-        scalar_t scale = 1; // TODO: expose as argument
+        scalar_t scale = 1; // TODO: expose as argument?
         CALLGEMV('t', scale, grad_output_n, m, ones, 1, grad_bias);
       }
     }
@@ -776,10 +776,10 @@ std::tuple<Tensor&, Tensor&, Tensor&> conv_dilated2d_out_cpu(
     IntArrayRef pad_size,
     IntArrayRef dilation_size) {
   auto options = input.options();
-  Tensor grad_output = at::empty({0}, options); // not used
-  Tensor grad_input = at::empty({0}, options); // not used
-  Tensor grad_weight = at::empty({0}, options); // not used
-  Tensor grad_bias = at::empty({0}, options); // not used
+  Tensor grad_output = at::empty({0}, options);  // not used
+  Tensor grad_input = at::empty({0}, options);   // not used
+  Tensor grad_weight = at::empty({0}, options);  // not used
+  Tensor grad_bias = at::empty({0}, options);    // not used
   int64_t nOutputPlane = weight.size(0);
   int64_t outputHeight = OUTPUTSIZE(0, 2);
   int64_t outputWidth = OUTPUTSIZE(1, 2);

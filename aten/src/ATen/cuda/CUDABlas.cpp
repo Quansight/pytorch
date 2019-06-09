@@ -20,13 +20,22 @@
     }                                     \
   } while (0)
 
-#define CUDABLAS_POSINT_CHECK(FD, X)        \
-  TORCH_CHECK(                              \
-      (X > 0 && X <= INT_MAX),              \
-      "at::cuda::blas::" #FD " argument" #X \
-      " must be positive and less than ",   \
-      INT_MAX,                              \
-      " but got ",                          \
+#define CUDABLAS_POSINT_CHECK(FD, X)         \
+  TORCH_CHECK(                               \
+      (X > 0 && X <= INT_MAX),               \
+      "at::cuda::blas::" #FD " argument " #X \
+      " must be positive and less than ",    \
+      INT_MAX,                               \
+      " but got ",                           \
+      X)
+
+#define CUDABLAS_NONNEGINT_CHECK(FD, X)      \
+  TORCH_CHECK(                               \
+      (X >= 0 && X <= INT_MAX),              \
+      "at::cuda::blas::" #FD " argument " #X \
+      " must be positive and less than ",    \
+      INT_MAX,                               \
+      " but got ",                           \
       X)
 
 namespace {
@@ -141,14 +150,14 @@ namespace blas {
 
 /* LEVEL 3 BLAS FUNCTIONS */
 
-#define GEMM_CHECK_ARGVALUES(Dtype)          \
-  do {                                       \
-    CUDABLAS_POSINT_CHECK(gemm<Dtype>, m);   \
-    CUDABLAS_POSINT_CHECK(gemm<Dtype>, n);   \
-    CUDABLAS_POSINT_CHECK(gemm<Dtype>, k);   \
-    CUDABLAS_POSINT_CHECK(gemm<Dtype>, lda); \
-    CUDABLAS_POSINT_CHECK(gemm<Dtype>, ldb); \
-    CUDABLAS_POSINT_CHECK(gemm<Dtype>, ldc); \
+#define GEMM_CHECK_ARGVALUES(Dtype)           \
+  do {                                        \
+    CUDABLAS_NONNEGINT_CHECK(gemm<Dtype>, m); \
+    CUDABLAS_NONNEGINT_CHECK(gemm<Dtype>, n); \
+    CUDABLAS_NONNEGINT_CHECK(gemm<Dtype>, k); \
+    CUDABLAS_POSINT_CHECK(gemm<Dtype>, lda);  \
+    CUDABLAS_POSINT_CHECK(gemm<Dtype>, ldb);  \
+    CUDABLAS_POSINT_CHECK(gemm<Dtype>, ldc);  \
   } while (0)
 
 template <>
@@ -270,8 +279,8 @@ void gemm<at::Half>(CUDABLAS_GEMM_ARGTYPES(at::Half)) {
 
 #define GEMV_CHECK_ARGVALUES(Dtype)           \
   do {                                        \
-    CUDABLAS_POSINT_CHECK(gemv<Dtype>, m);    \
-    CUDABLAS_POSINT_CHECK(gemv<Dtype>, n);    \
+    CUDABLAS_NONNEGINT_CHECK(gemv<Dtype>, m); \
+    CUDABLAS_NONNEGINT_CHECK(gemv<Dtype>, n); \
     CUDABLAS_POSINT_CHECK(gemv<Dtype>, lda);  \
     CUDABLAS_POSINT_CHECK(gemv<Dtype>, incx); \
     CUDABLAS_POSINT_CHECK(gemv<Dtype>, incy); \
