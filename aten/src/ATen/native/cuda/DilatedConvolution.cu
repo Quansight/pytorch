@@ -1135,6 +1135,7 @@ std::tuple<Tensor&, Tensor&, Tensor&> conv_dilated2d_forward_out_cuda(
     IntArrayRef pad_size,
     IntArrayRef dilation_size) {
   // Is this function dead?
+  TORCH_CHECK(false, "Error conv_dilated2d_forward_out_cuda 3");
   CALL_OUT(2);
   return std::tie(output, columns, ones);
 }
@@ -1149,6 +1150,7 @@ Tensor& conv_dilated2d_forward_out_cuda(
     IntArrayRef pad_size,
     IntArrayRef dilation_size) {
   // Is this function dead?
+  TORCH_CHECK(false, "Error conv_dilated2d_forward_out_cuda 1");
   auto options = output.options();
   Tensor columns = at::empty({0}, options);
   Tensor ones = at::empty({0}, options);
@@ -1165,6 +1167,7 @@ std::tuple<Tensor, Tensor, Tensor> conv_dilated2d_forward_cuda(
     IntArrayRef pad_size,
     IntArrayRef dilation_size) {
   // Is this function dead?
+  TORCH_CHECK(false, "Error conv_dilated2d_forward_cuda");
   auto options = input.options();
   Tensor output = at::empty({0}, options);
   Tensor columns = at::empty({0}, options);
@@ -1293,6 +1296,7 @@ std::tuple<Tensor&, Tensor&, Tensor&> conv_dilated3d_forward_out_cuda(
     IntArrayRef pad_size,
     IntArrayRef dilation_size) {
   // Is this function dead?
+  TORCH_CHECK(false, "Error conv_dilated3d_forward_out_cuda 3");
   CALL_OUT(3);
   return std::tie(output, columns, ones);
 }
@@ -1307,6 +1311,7 @@ Tensor& conv_dilated3d_forward_out_cuda(
     IntArrayRef pad_size,
     IntArrayRef dilation_size) {
   // Is this function dead?
+  TORCH_CHECK(false, "Error conv_dilated3d_forward_out_cuda 1");
   auto options = output.options();
   Tensor columns = at::empty({0}, options);
   Tensor ones = at::empty({0}, options);
@@ -1323,6 +1328,7 @@ std::tuple<Tensor, Tensor, Tensor> conv_dilated3d_forward_cuda(
     IntArrayRef pad_size,
     IntArrayRef dilation_size) {
   // Is this function dead?
+  TORCH_CHECK(false, "Error conv_dilated3d_forward_cuda 3");
   auto options = input.options();
   Tensor output = at::empty({0}, options);
   Tensor columns = at::empty({0}, options);
