@@ -27,7 +27,8 @@ __all__ = [
 
 
 def _broadcast_tensors_dispatcher(*tensors):
-    return (tensor,)
+    for tensor in tensors:
+        yield tensor
 
 
 @torch_function_dispatch(_broadcast_tensors_dispatcher)
@@ -527,6 +528,11 @@ def unique_consecutive(input, return_inverse=False, return_counts=False, dim=Non
     return output
 
 
+def _tensordot_dispatcher(a, b, dims=None):
+    return (a, b)
+
+
+@torch_function_dispatch(_tensordot_dispatcher)
 def tensordot(a, b, dims=2):
     r"""Returns a contraction of a and b over multiple dimensions.
 
@@ -742,6 +748,11 @@ def chain_matmul(*matrices):
     return torch._C._VariableFunctions.chain_matmul(matrices)
 
 
+def _lu_dispatcher(A, pivot=None, get_infos=None, out=None):
+    return (A,)
+
+
+@torch_function_dispatch(_lu_dispatcher)
 def lu(A, pivot=True, get_infos=False, out=None):
     r"""Computes the LU factorization of a square matrix or batches of square matrices
     :attr:`A`. Returns a tuple containing the LU factorization and pivots of :attr:`A`.
