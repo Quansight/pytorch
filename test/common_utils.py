@@ -1144,6 +1144,15 @@ def random_matrix(rows, columns, *batch_dims, **kwargs):
     return u.matmul(s.expand(batch_dims + (rows, columns)).matmul(v.transpose(-2, -1)))
 
 
+def random_lowrank_matrix(rank, rows, columns, *batch_dims, **kwargs):
+    """Return rectangular matrix or batches of rectangular matrices with
+    given rank.
+    """
+    B = random_matrix(rows, rank, *batch_dims, **kwargs)
+    C = random_matrix(rank, columns, *batch_dims, **kwargs)
+    return B.matmul(C)
+
+
 def brute_pdist(inp, p=2):
     """Computes the same as torch.pdist using primitives"""
     n = inp.shape[-2]

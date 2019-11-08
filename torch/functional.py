@@ -2,6 +2,9 @@ import torch
 import torch.nn.functional as F
 from torch._six import inf
 from itertools import product
+from .lowrank import pca
+from .lowrank import svd as svd_lowrank
+
 
 __all__ = [
     'align_tensors',  # BUILD_NAMEDTENSOR only
@@ -12,10 +15,12 @@ __all__ = [
     'einsum',
     'isfinite',
     'isinf',
+    'svd_lowrank',
     'lu',
     'lu_unpack',
     'norm',
     'meshgrid',
+    'pca',
     'split',
     'stft',
     'tensordot',
