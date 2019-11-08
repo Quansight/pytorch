@@ -9094,6 +9094,99 @@ class TestTorchDeviceType(TestCase):
             u, s_actual, v = torch.svd(a, compute_uv=False)
             self.assertEqual(s_expect, s_actual, "Singular values don't match")
 
+    @skipCUDAIfNoMagma
+    @skipCPUIfNoLapack
+    def test_svd_lowrank(self, device):
+        from common_utils import random_lowrank_matrix
+
+        def run_subtest(actual_rank, matrix_size, batches, device, **options):
+            if isinstance(matrix_size, int):
+                rows = columns = matrix_size
+            else:
+                rows, columns = matrix_size
+            a = random_lowrank_matrix(actual_rank, rows, columns, *batches, device=device)
+
+            q = min(*size)
+            u, s, v = torch.svd_lowrank(a, q=q, **options)
+
+            # check if u, s, v is a SVD
+            u, s, v = u[..., :q], s[..., :q], v[..., :q]
+            A = u.matmul(s.diag()).matmul(v.t())
+            self.assertEqual(A, a)
+
+            # check if svd_lowrank produces same singular values as torch.svd
+            U, S, V = torch.svd(a)
+            self.assertEqual(s.shape, S.shape)
+            self.assertEqual(u.shape, U.shape)
+            self.assertEqual(v.shape, V.shape)
+            self.assertEqual(s, S)
+
+            # check if pairs (u, U) and (v, V) span the same
+            # subspaces, respectively
+            u, s, v = u[..., :actual_rank], s[..., :actual_rank], v[..., :actual_rank]
+            U, S, V = U[..., :actual_rank], S[..., :actual_rank], V[..., :actual_rank]
+            self.assertEqual(u.t().matmul(U).det().abs(), 1)
+            self.assertEqual(v.t().matmul(V).det().abs(), 1)
+
+        for actual_rank, size in [
+                (2, (17, 4)),
+                (4, (17, 4)),
+                (4, (17, 17)),
+                (10, (100, 40)),
+                (7, (1000, 1000)),
+                ]:
+                run_subtest(actual_rank, size, (), device)
+                if size != size[::-1]:
+                    run_subtest(actual_rank, size[::-1], (), device)
+
+    @skipCUDAIfNoMagma
+    @skipCPUIfNoLapack
+    def test_pca(self, device):
+        from common_utils import random_lowrank_matrix
+
+        def run_subtest(guess_rank, actual_rank, matrix_size, batches, device, **options):
+            if isinstance(matrix_size, int):
+                rows = columns = matrix_size
+            else:
+                rows, columns = matrix_size
+            a = random_lowrank_matrix(actual_rank, rows, columns, *batches, device=device)
+
+            u, s, v = torch.pca(a, q=guess_rank, **options)
+
+            self.assertEqual(s.shape[-1], guess_rank)
+            self.assertEqual(u.shape[-2], rows)
+            self.assertEqual(u.shape[-1], guess_rank)
+            self.assertEqual(v.shape[-1], guess_rank)
+            self.assertEqual(v.shape[-2], columns)
+
+            detect_rank = len([s_ for s_ in s if abs(s_) > 1e-6])
+            self.assertEqual(actual_rank, detect_rank)
+
+            A1 = u.matmul(s.diag()).matmul(v.t())
+            ones_m1 = torch.ones((rows, 1), dtype=a.dtype, device=device)
+            c = a.sum(axis=-2) / rows
+            c = c.reshape((1, columns))
+            A2 = a - ones_m1.matmul(c)
+            self.assertEqual(A1, A2)
+
+            U, S, V = torch.svd(A2)
+            self.assertEqual(s[:actual_rank], S[:actual_rank])
+
+        for actual_rank, size in [
+                (2, (17, 4)),
+                (2, (100, 4)),
+                (6, (100, 40)),
+                (12, (1000, 1000)),
+        ]:
+            for guess_rank in [
+                    actual_rank,
+                    actual_rank + 2,
+                    actual_rank + 6,
+            ]:
+                if guess_rank <= min(*size):
+                    run_subtest(guess_rank, actual_rank, size, (), device)
+                    run_subtest(guess_rank, actual_rank, size[::-1], (), device)
+
     def test_lerp(self, device):
         start_end_shapes = [(), (5,), (5, 5), (5, 5, 5)]
         for shapes in product(start_end_shapes, start_end_shapes):
