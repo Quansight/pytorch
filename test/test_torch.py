@@ -8622,10 +8622,10 @@ class TestTorchDeviceType(TestCase):
                 (4, (17, 17)),
                 (10, (100, 40)),
                 (7, (1000, 1000)),
-                ]:
-                run_subtest(actual_rank, size, (), device)
-                if size != size[::-1]:
-                    run_subtest(actual_rank, size[::-1], (), device)
+        ]:
+            run_subtest(actual_rank, size, (), device)
+            if size != size[::-1]:
+                run_subtest(actual_rank, size[::-1], (), device)
 
     @skipCUDAIfNoMagma
     @skipCPUIfNoLapack

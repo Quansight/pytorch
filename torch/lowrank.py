@@ -75,11 +75,11 @@ def get_approximate_basis(A, q, niter=2):
     .. note:: For an adequate approximation of a k-rank matrix A,
               where k is not known in advance but could be estimated,
               the number of Q columns q can be choosen according to
-              the following criteria: in general, :math:`k <= q <
-              2*k`. For large low-rank matrices, take :math:`q = k +
-              5..10`.  If k is relatively small compared to
-              :math:`min(m, n)`, choosing :math:`q = k + 0..2` may be
-              sufficient.
+              the following criteria: in general, :math:`k <= q <=
+              min(2*k, m, n)`. For large low-rank matrices, take
+              :math:`q = k + 5..10`.  If k is relatively small
+              compared to :math:`min(m, n)`, choosing :math:`q = k +
+              0..2` may be sufficient.
 
     .. note:: To obtain repeatable results, reset the seed for the
               pseudorandom number generator
@@ -100,6 +100,7 @@ def get_approximate_basis(A, q, niter=2):
           constructing approximate matrix decompositions,
           arXiv:0909.4061 [math.NA; math.PR], 2009 (available at
           `arXiv <http://arxiv.org/abs/0909.4061>`_).
+
     """
     m, n = A.shape[-2:]
 
@@ -206,7 +207,7 @@ def pca(A, q=None, center=True, niter=2):
 
     if q is None:
         q = min(6, m, n)
-    elif not (q >=0 and q <= min(m, n)):
+    elif not (q >= 0 and q <= min(m, n)):
         raise ValueError('q(={}) must be non-negative integer'
                          ' and not greater than min(m, n)={}'
                          .format(q, min(m, n)))

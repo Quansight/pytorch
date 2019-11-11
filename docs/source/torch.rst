@@ -362,6 +362,8 @@ BLAS and LAPACK Operations
 .. autofunction:: qr
 .. autofunction:: solve
 .. autofunction:: svd
+.. autofunction:: svd_lowrank
+.. autofunction:: pca
 .. autofunction:: symeig
 .. autofunction:: trapz
 .. autofunction:: triangular_solve
