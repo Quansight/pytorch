@@ -10,7 +10,7 @@ import tempfile
 import warnings
 from contextlib import closing, contextmanager
 from ._utils import _import_dotted_name
-from ._six import string_classes as _string_classes, PY2, PY3
+from ._six import string_classes as _string_classes, PY2
 from torch._utils_internal import get_source_lines_and_file
 if PY2:
     import copy_reg as copyreg

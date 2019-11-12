@@ -8585,17 +8585,24 @@ class TestTorchDeviceType(TestCase):
     @skipCUDAIfNoMagma
     @skipCPUIfNoLapack
     def test_svd_lowrank(self, device):
-        from common_utils import random_lowrank_matrix
+        from common_utils import random_lowrank_matrix, random_sparse_matrix
 
         def run_subtest(actual_rank, matrix_size, batches, device, **options):
+            density = options.pop('density', 1)
             if isinstance(matrix_size, int):
                 rows = columns = matrix_size
             else:
                 rows, columns = matrix_size
-            a = random_lowrank_matrix(actual_rank, rows, columns, *batches, device=device)
+            if density == 1:
+                a_input = random_lowrank_matrix(actual_rank, rows, columns, *batches, device=device)
+                a = a_input
+            else:
+                assert batches == ()
+                a_input = random_sparse_matrix(rows, columns, density, device=device)
+                a = a_input.to_dense()
 
             q = min(*size)
-            u, s, v = torch.svd_lowrank(a, q=q, **options)
+            u, s, v = torch.svd_lowrank(a_input, q=q, **options)
 
             # check if u, s, v is a SVD
             u, s, v = u[..., :q], s[..., :q], v[..., :q]
@@ -8609,12 +8616,15 @@ class TestTorchDeviceType(TestCase):
             self.assertEqual(v.shape, V.shape)
             self.assertEqual(s, S)
 
-            # check if pairs (u, U) and (v, V) span the same
-            # subspaces, respectively
-            u, s, v = u[..., :actual_rank], s[..., :actual_rank], v[..., :actual_rank]
-            U, S, V = U[..., :actual_rank], S[..., :actual_rank], V[..., :actual_rank]
-            self.assertEqual(u.transpose(-2, -1).matmul(U).det().abs(), torch.ones(batches))
-            self.assertEqual(v.transpose(-2, -1).matmul(V).det().abs(), torch.ones(batches))
+            if density == 1:
+                # actual_rank is known only for dense inputs
+                #
+                # check if pairs (u, U) and (v, V) span the same
+                # subspaces, respectively
+                u, s, v = u[..., :actual_rank], s[..., :actual_rank], v[..., :actual_rank]
+                U, S, V = U[..., :actual_rank], S[..., :actual_rank], V[..., :actual_rank]
+                self.assertEqual(u.transpose(-2, -1).matmul(U).det().abs(), torch.ones(batches))
+                self.assertEqual(v.transpose(-2, -1).matmul(V).det().abs(), torch.ones(batches))
 
         all_batches = [(), (1,), (3,), (2, 3)]
         for actual_rank, size, all_batches in [
@@ -8624,10 +8634,17 @@ class TestTorchDeviceType(TestCase):
                 (10, (100, 40), all_batches),
                 (7, (1000, 1000), [()]),
         ]:
+            # dense input
             for batches in all_batches:
                 run_subtest(actual_rank, size, batches, device)
                 if size != size[::-1]:
                     run_subtest(actual_rank, size[::-1], batches, device)
+
+        # sparse input
+        for size in [(17, 4), (4, 17), (17, 17), (100, 40), (40, 100), (1000, 1000)]:
+            for density in [0.005, 0.1]:
+                run_subtest(None, size, (), device, density=density)
+
 
     @skipCUDAIfNoMagma
     @skipCPUIfNoLapack

@@ -1121,6 +1121,13 @@ def random_fullrank_matrix_distinct_singular_value(matrix_size, *batch_dims,
 
 
 def random_matrix(rows, columns, *batch_dims, **kwargs):
+    """Return rectangular matrix or batches of rectangular matrices.
+
+    Parameters:
+      dtype - the data type
+      device - the device kind
+      singular - when True, the output will be singular
+    """
     dtype = kwargs.get('dtype', torch.double)
     device = kwargs.get('device', 'cpu')
     silent = kwargs.get("silent", False)
@@ -1151,6 +1158,32 @@ def random_lowrank_matrix(rank, rows, columns, *batch_dims, **kwargs):
     B = random_matrix(rows, rank, *batch_dims, **kwargs)
     C = random_matrix(rank, columns, *batch_dims, **kwargs)
     return B.matmul(C)
+
+
+def random_sparse_matrix(rows, columns, density=0.01, **kwargs):
+    """Return rectangular random sparse matrix within given density.
+
+    The density of the result approaches to given density as the size
+    of the matrix is increased and a relatively small value of density
+    is specified but higher than min(rows, columns)/(rows * columns)
+    for non-singular matrices.
+    """
+    dtype = kwargs.get('dtype', torch.double)
+    device = kwargs.get('device', 'cpu')
+    singular = kwargs.get("singular", False)
+
+    k = min(rows, columns)
+    nonzero_elements = max(min(rows, columns), int(rows * columns * density))
+
+    row_indices = [i % rows for i in range(nonzero_elements)]
+    column_indices = [i % columns for i in range(nonzero_elements)]
+    random.shuffle(column_indices)
+    indices = [row_indices, column_indices]
+    values = torch.randn(nonzero_elements, dtype=dtype, device=device)
+    # ensure that the diagonal dominates
+    values *= torch.tensor([-(i - j)**4 for i, j in zip(*indices)], dtype=dtype, device=device).exp()
+    A = torch.sparse_coo_tensor(indices, values, (rows, columns), device=device)
+    return A.coalesce()
 
 
 def brute_pdist(inp, p=2):
