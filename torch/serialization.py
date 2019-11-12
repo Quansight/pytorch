@@ -13,6 +13,7 @@ from ._utils import _import_dotted_name
 from ._six import string_classes as _string_classes, PY2, PY3
 from torch._utils_internal import get_source_lines_and_file
 if PY2:
+    import copy_reg as copyreg
     import cPickle as pickle
 else:
     import copyreg
@@ -610,9 +611,8 @@ def _get_layout(name):
     return cache[name]
 
 
-if PY3:
-    _get_layout.cache = {}
-    copyreg.pickle(torch.layout, lambda obj: (_get_layout, (str(obj),)))
+_get_layout.cache = {}
+copyreg.pickle(torch.layout, lambda obj: (_get_layout, (str(obj),)))
 
 
 def _legacy_load(f, map_location, pickle_module, **pickle_load_args):
