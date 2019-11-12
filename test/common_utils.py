@@ -1133,7 +1133,7 @@ def random_matrix(rows, columns, *batch_dims, **kwargs):
     s = torch.zeros(rows, columns, dtype=dtype, device=device)
     k = min(rows, columns)
     for i in range(k):
-        s[i, i] = (i + 1) / (k + 1)
+        s[i, i] = float(i + 1) / (k + 1)
     if singular:
         # make matrix singular
         s[k - 1, k - 1] = 0
