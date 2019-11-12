@@ -49,6 +49,7 @@ def uniform(low=0.0, high=1.0, size=None, dtype=None, device=None):
         return r + 1j * i
     return r
 
+
 def get_floating_dtype(A):
     """Return the floating point dtype of tensor A.
     """
@@ -63,6 +64,18 @@ def conjugate(A):
     if A.dtype in [torch.complex32, torch.complex64, torch.complex128]:    
         return A.conj()
     return A
+
+
+def batch_transpose(A):
+    """Return transpose of a matrix or batches of matrices.
+    """
+    return A.transpose(-1, -2)
+
+
+def batch_transjugate(A):
+    """Return transpose conjugate of a matrix or batches of matrices.
+    """
+    return conjugate(batch_transpose(A))
 
 
 def get_approximate_basis(A, q, niter=2):
@@ -85,7 +98,7 @@ def get_approximate_basis(A, q, niter=2):
               pseudorandom number generator
 
     Arguments::
-        A (Tensor): the input tensor of size :math:`(m, n)`
+        A (Tensor): the input tensor of size :math:`(*, m, n)`
 
         q (int): the dimension of subspace spanned by Q columns.
 
@@ -109,7 +122,7 @@ def get_approximate_basis(A, q, niter=2):
     R = uniform(low=-1.0, high=1.0, size=(n, q),
                 dtype=dtype, device=A.device)
 
-    A_H = conjugate(A).t()
+    A_H = batch_transjugate(A)
     (Q, _) = A.matmul(R).qr()
     for i in range(niter):
         (Q, _) = A_H.matmul(Q).qr()
@@ -119,7 +132,8 @@ def get_approximate_basis(A, q, niter=2):
 
 def svd(A, q=6, niter=2):
     """Return the singular value decomposition ``(U, S, V)`` of a low-rank
-    matrix A such that :math:`A \approx U diag(S) V^T`.
+    matrix or batches of such matrices A such that :math:`A \approx U
+    diag(S) V^T`.
 
     .. note:: The implementation is based on the Algorithm 5.1 from
               Halko et al, 2009.
@@ -128,7 +142,7 @@ def svd(A, q=6, niter=2):
               pseudorandom number generator
 
     Arguments::
-        A (Tensor): the input tensor of size :math:`(m, n)`
+        A (Tensor): the input tensor of size :math:`(*, m, n)`
 
         q (int, optional): a slightly overestimated rank of A.
 
@@ -142,7 +156,8 @@ def svd(A, q=6, niter=2):
           constructing approximate matrix decompositions,
           arXiv:0909.4061 [math.NA; math.PR], 2009 (available at
           `arXiv <http://arxiv.org/abs/0909.4061>`_).
-   """
+
+    """
     m, n = A.shape[-2:]
 
     # Algorithm 5.1 in Halko et al 2009, slightly modified to reduce
@@ -150,27 +165,28 @@ def svd(A, q=6, niter=2):
     if m < n:
         # computing the SVD approximation of a transpose in order to
         # keep B shape minimal
-        Q = get_approximate_basis(A.t(), q, niter=niter)
+        Q = get_approximate_basis(batch_transpose(A), q, niter=niter)
         B_t = A.matmul(conjugate(Q))
         U, S, V = torch.svd(B_t)
         V = Q.matmul(V)
     else:
         Q = get_approximate_basis(A, q, niter=niter)
-        B = conjugate(Q).t().matmul(A)
+        B = batch_transjugate(Q).matmul(A)
         U, S, V = torch.svd(B)
         U = Q.matmul(U)
     return U, S, V
 
 
 def pca(A, q=None, center=True, niter=2):
-    r"""Performs Principal Component Analysis (PCA) on a low-rank matrix.
+    r"""Performs Principal Component Analysis (PCA) on a low-rank matrix or
+    batches of such matrices.
 
     This function returns a namedtuple ``(U, S, V)`` which is the
     nearly optimal approximation of a singular value decomposition of
     a centered matrix :attr:`A` such that :math:`A = U diag(S) V^T`.
 
     .. note:: Different from the standard SVD, the size of returned
-              tensors depend on the specified rank and q
+              matrices depend on the specified rank and q
               values as follows:
                 - U is m x q matrix
                 - S is q-vector
@@ -181,7 +197,7 @@ def pca(A, q=None, center=True, niter=2):
 
     Arguments:
 
-        A (Tensor): the input tensor of size :math:`(m, n)`
+        A (Tensor): the input tensor of size :math:`(*, m, n)`
 
         q (int, optional): a slightly overestimated rank of A. By
                            default, q = min(6, m, n).
@@ -203,7 +219,7 @@ def pca(A, q=None, center=True, niter=2):
           `arXiv <http://arxiv.org/abs/0909.4061>`_).
 
     """
-    (m, n) = A.shape
+    (m, n) = A.shape[-2:]
 
     if q is None:
         q = min(6, m, n)
@@ -218,9 +234,9 @@ def pca(A, q=None, center=True, niter=2):
     dtype = get_floating_dtype(A)
 
     if center:
-        ones_m1 = torch.ones((m, 1), dtype=dtype, device=A.device)
+        ones_m1 = torch.ones(A.shape[:-1] + (1, ), dtype=dtype, device=A.device)
         c = A.sum(axis=-2) / m
-        c = c.reshape((1, n))
+        c = c.reshape(A.shape[:-2] + (1, n))
         return pca(A - ones_m1.matmul(c), q=q, center=False, niter=niter)
 
     return svd(A, q, niter=niter)
