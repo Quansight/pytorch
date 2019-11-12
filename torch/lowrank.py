@@ -53,7 +53,8 @@ def uniform(low=0.0, high=1.0, size=None, dtype=None, device=None):
 def get_floating_dtype(A):
     """Return the floating point dtype of tensor A.
     """
-    return (A.flatten()[0] * 1.0).dtype
+    index = (0, ) * len(A.shape)
+    return (A.__getitem__(index) * 1.0).dtype
 
 
 def conjugate(A):
@@ -122,11 +123,16 @@ def get_approximate_basis(A, q, niter=2):
     R = uniform(low=-1.0, high=1.0, size=(n, q),
                 dtype=dtype, device=A.device)
 
+    if is_sparse(A):
+        matmul = torch.sparse.mm
+    else:
+        matmul = torch.matmul
+
     A_H = batch_transjugate(A)
-    (Q, _) = A.matmul(R).qr()
+    (Q, _) = matmul(A, R).qr()
     for i in range(niter):
-        (Q, _) = A_H.matmul(Q).qr()
-        (Q, _) = A.matmul(Q).qr()
+        (Q, _) = matmul(A_H, Q).qr()
+        (Q, _) = matmul(A, Q).qr()
     return Q
 
 
@@ -159,19 +165,24 @@ def svd(A, q=6, niter=2):
 
     """
     m, n = A.shape[-2:]
+    if is_sparse(A):
+        matmul = torch.sparse.mm
+    else:
+        matmul = torch.matmul
 
     # Algorithm 5.1 in Halko et al 2009, slightly modified to reduce
     # the number conjugate and transpose operations
+    A_t = batch_transpose(A)
     if m < n:
         # computing the SVD approximation of a transpose in order to
         # keep B shape minimal
-        Q = get_approximate_basis(batch_transpose(A), q, niter=niter)
-        B_t = A.matmul(conjugate(Q))
+        Q = get_approximate_basis(A_t, q, niter=niter)
+        B_t = matmul(A, conjugate(Q))
         U, S, V = torch.svd(B_t)
         V = Q.matmul(V)
     else:
         Q = get_approximate_basis(A, q, niter=niter)
-        B = batch_transjugate(Q).matmul(A)
+        B = batch_transpose(matmul(A_t, conjugate(Q)))
         U, S, V = torch.svd(B)
         U = Q.matmul(U)
     return U, S, V
@@ -234,6 +245,9 @@ def pca(A, q=None, center=True, niter=2):
     dtype = get_floating_dtype(A)
 
     if center:
+        if is_sparse(A):
+            raise NotImplementedError('PCA of sparse matrix')
+
         ones_m1 = torch.ones(A.shape[:-1] + (1, ), dtype=dtype, device=A.device)
         c = A.sum(axis=-2) / m
         c = c.reshape(A.shape[:-2] + (1, n))
