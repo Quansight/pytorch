@@ -9111,7 +9111,7 @@ class TestTorchDeviceType(TestCase):
 
             # check if u, s, v is a SVD
             u, s, v = u[..., :q], s[..., :q], v[..., :q]
-            A = u.matmul(s.diag()).matmul(v.t())
+            A = u.matmul(s.diag_embed()).matmul(v.transpose(-2, -1))
             self.assertEqual(A, a)
 
             # check if svd_lowrank produces same singular values as torch.svd
@@ -9125,19 +9125,21 @@ class TestTorchDeviceType(TestCase):
             # subspaces, respectively
             u, s, v = u[..., :actual_rank], s[..., :actual_rank], v[..., :actual_rank]
             U, S, V = U[..., :actual_rank], S[..., :actual_rank], V[..., :actual_rank]
-            self.assertEqual(u.t().matmul(U).det().abs(), 1)
-            self.assertEqual(v.t().matmul(V).det().abs(), 1)
+            self.assertEqual(u.transpose(-2, -1).matmul(U).det().abs(), torch.ones(batches))
+            self.assertEqual(v.transpose(-2, -1).matmul(V).det().abs(), torch.ones(batches))
 
-        for actual_rank, size in [
-                (2, (17, 4)),
-                (4, (17, 4)),
-                (4, (17, 17)),
-                (10, (100, 40)),
-                (7, (1000, 1000)),
+        all_batches = [(), (1,), (3,), (2, 3)]
+        for actual_rank, size, all_batches in [
+                (2, (17, 4), all_batches),
+                (4, (17, 4), all_batches),
+                (4, (17, 17), all_batches),
+                (10, (100, 40), all_batches),
+                (7, (1000, 1000), [()]),
         ]:
-            run_subtest(actual_rank, size, (), device)
-            if size != size[::-1]:
-                run_subtest(actual_rank, size[::-1], (), device)
+            for batches in all_batches:
+                run_subtest(actual_rank, size, batches, device)
+                if size != size[::-1]:
+                    run_subtest(actual_rank, size[::-1], batches, device)
 
     @skipCUDAIfNoMagma
     @skipCPUIfNoLapack
@@ -9159,33 +9161,38 @@ class TestTorchDeviceType(TestCase):
             self.assertEqual(v.shape[-1], guess_rank)
             self.assertEqual(v.shape[-2], columns)
 
-            detect_rank = len([s_ for s_ in s if abs(s_) > 1e-6])
-            self.assertEqual(actual_rank, detect_rank)
+            detect_rank = (s.abs() > 1e-5).sum(axis=-1)
+            if not (actual_rank * torch.ones(batches, device=device) == detect_rank).all():
+                # for debugging, to be removed
+                print(rows, columns, actual_rank, detect_rank, s)
+            self.assertEqual(actual_rank * torch.ones(batches, device=device), detect_rank)
 
-            A1 = u.matmul(s.diag()).matmul(v.t())
-            ones_m1 = torch.ones((rows, 1), dtype=a.dtype, device=device)
+            A1 = u.matmul(s.diag_embed()).matmul(v.transpose(-2, -1))
+            ones_m1 = torch.ones(batches + (rows, 1), dtype=a.dtype, device=device)
             c = a.sum(axis=-2) / rows
-            c = c.reshape((1, columns))
+            c = c.reshape(batches + (1, columns))
             A2 = a - ones_m1.matmul(c)
             self.assertEqual(A1, A2)
 
             U, S, V = torch.svd(A2)
-            self.assertEqual(s[:actual_rank], S[:actual_rank])
+            self.assertEqual(s[..., :actual_rank], S[..., :actual_rank])
 
-        for actual_rank, size in [
-                (2, (17, 4)),
-                (2, (100, 4)),
-                (6, (100, 40)),
-                (12, (1000, 1000)),
+        all_batches = [(), (1,), (3,), (2, 3)]
+        for actual_rank, size, all_batches in [
+                (2, (17, 4), all_batches),
+                (2, (100, 4), all_batches),
+                (6, (100, 40), all_batches),
+                (12, (1000, 1000), [()]),
         ]:
-            for guess_rank in [
-                    actual_rank,
-                    actual_rank + 2,
-                    actual_rank + 6,
-            ]:
-                if guess_rank <= min(*size):
-                    run_subtest(guess_rank, actual_rank, size, (), device)
-                    run_subtest(guess_rank, actual_rank, size[::-1], (), device)
+            for batches in all_batches:
+                for guess_rank in [
+                        actual_rank,
+                        actual_rank + 2,
+                        actual_rank + 6,
+                ]:
+                    if guess_rank <= min(*size):
+                        run_subtest(guess_rank, actual_rank, size, batches, device)
+                        run_subtest(guess_rank, actual_rank, size[::-1], batches, device)
 
     def test_lerp(self, device):
         start_end_shapes = [(), (5,), (5, 5), (5, 5, 5)]
