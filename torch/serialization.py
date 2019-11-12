@@ -8,14 +8,14 @@ import torch
 import tarfile
 import tempfile
 import warnings
-import copyreg
 from contextlib import closing, contextmanager
 from ._utils import _import_dotted_name
-from ._six import string_classes as _string_classes
+from ._six import string_classes as _string_classes, PY2, PY3
 from torch._utils_internal import get_source_lines_and_file
-if sys.version_info[0] == 2:
+if PY2:
     import cPickle as pickle
 else:
+    import copyreg
     import pickle
     import pathlib
 
@@ -453,8 +453,9 @@ def _get_layout(name):
     return cache[name]
 
 
-_get_layout.cache = {}
-copyreg.pickle(torch.layout, lambda obj: (_get_layout, (str(obj),)))
+if PY3:
+    _get_layout.cache = {}
+    copyreg.pickle(torch.layout, lambda obj: (_get_layout, (str(obj),)))
 
 
 def _load(f, map_location, pickle_module, **pickle_load_args):
