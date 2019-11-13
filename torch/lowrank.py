@@ -6,12 +6,7 @@ import torch
 
 def is_sparse(A):
     """Check if tensor A is a sparse tensor"""
-    return isinstance(
-        A, (torch.sparse.CharTensor, torch.sparse.ByteTensor,
-            torch.sparse.ShortTensor, torch.sparse.IntTensor,
-            torch.sparse.LongTensor, torch.sparse.HalfTensor,
-            torch.sparse.BFloat16Tensor, torch.sparse.FloatTensor,
-            torch.sparse.DoubleTensor))
+    return A.layout == torch.sparse_coo
 
 
 def uniform(low=0.0, high=1.0, size=None, dtype=None, device=None):
@@ -57,6 +52,14 @@ def get_floating_dtype(A):
     return (A.__getitem__(index) * 1.0).dtype
 
 
+def get_matmul(A):
+    """Return matrix multiplication implementation.
+    """
+    if is_sparse(A):
+        return torch.sparse.mm
+    else:
+        return torch.matmul
+
 def conjugate(A):
     """Return conjugate of tensor A.
 
@@ -79,9 +82,11 @@ def batch_transjugate(A):
     return conjugate(batch_transpose(A))
 
 
-def get_approximate_basis(A, q, niter=2):
-    """Return tensor Q with q orthonormal columns such that :math:`Q Q^H
-    A` approximates :math:`A`.
+def get_approximate_basis(A, q, niter=2, M=None):
+    """Return tensor :math:`Q` with q orthonormal columns such that
+    :math:`Q Q^H A` approximates :math:`A`. If :math:`M` is specified,
+    then `Q` is such that :math:`Q Q^H (A - M)` approximates :math:`A
+    - M`.
 
     .. note:: The implementation is based on the Algorithm 4.4 from
               Halko et al, 2009.
@@ -108,6 +113,9 @@ def get_approximate_basis(A, q, niter=2):
                                integer. In most cases, the default
                                value 2 is more than enough.
 
+        M (Tensor, optional): the input tensor's mean of size
+                              :math:`(*, 1, n)`.
+
     References::
         - Nathan Halko, Per-Gunnar Martinsson, and Joel Tropp, Finding
           structure with randomness: probabilistic algorithms for
@@ -117,35 +125,42 @@ def get_approximate_basis(A, q, niter=2):
 
     """
     m, n = A.shape[-2:]
-
     dtype = get_floating_dtype(A)
+    matmul = get_matmul(A)
 
     R = uniform(low=-1.0, high=1.0, size=(n, q),
                 dtype=dtype, device=A.device)
 
-    if is_sparse(A):
-        matmul = torch.sparse.mm
-    else:
-        matmul = torch.matmul
-
     A_H = batch_transjugate(A)
-    (Q, _) = matmul(A, R).qr()
-    for i in range(niter):
-        (Q, _) = matmul(A_H, Q).qr()
-        (Q, _) = matmul(A, Q).qr()
+    if M is None:
+        (Q, _) = matmul(A, R).qr()
+        for i in range(niter):
+            (Q, _) = matmul(A_H, Q).qr()
+            (Q, _) = matmul(A, Q).qr()
+    else:
+        matmul2 = get_matmul(M)
+        M_H = batch_transjugate(M)
+        (Q, _) = (matmul(A, R) - matmul2(M, R)).qr()
+        for i in range(niter):
+            (Q, _) = (matmul(A_H, Q) - matmul2(M_H, Q)).qr()
+            (Q, _) = (matmul(A, Q) - matmul2(M, Q)).qr()
+
     return Q
 
 
-def svd(A, q=6, niter=2):
-    """Return the singular value decomposition ``(U, S, V)`` of a low-rank
-    matrix or batches of such matrices A such that :math:`A \approx U
-    diag(S) V^T`.
+def svd(A, q=6, niter=2, M=None):
+    """Return the singular value decomposition ``(U, S, V)`` of a matrix,
+    batches of matrices, or a sparse matrix :math:`A` such that
+    :math:`A \approx U diag(S) V^T`. In case :math:`M` is given, then
+    SVD is computed for the matrix :math:`A - M`.
 
     .. note:: The implementation is based on the Algorithm 5.1 from
               Halko et al, 2009.
 
     .. note:: To obtain repeatable results, reset the seed for the
               pseudorandom number generator
+
+    .. note:: The input is assumed to be a low-rank matrix.
 
     Arguments::
         A (Tensor): the input tensor of size :math:`(*, m, n)`
@@ -156,6 +171,9 @@ def svd(A, q=6, niter=2):
                                conduct; niter must be a nonnegative
                                integer, and defaults to 2
 
+        M (Tensor, optional): the input tensor's mean of size
+                              :math:`(*, 1, n)`.
+
     References::
         - Nathan Halko, Per-Gunnar Martinsson, and Joel Tropp, Finding
           structure with randomness: probabilistic algorithms for
@@ -165,32 +183,43 @@ def svd(A, q=6, niter=2):
 
     """
     m, n = A.shape[-2:]
-    if is_sparse(A):
-        matmul = torch.sparse.mm
+    matmul = get_matmul(A)
+    if M is None:
+        M_t = None
     else:
-        matmul = torch.matmul
+        matmul2 = get_matmul(M)
+        M_t = batch_transpose(M)
+    A_t = batch_transpose(A)
 
     # Algorithm 5.1 in Halko et al 2009, slightly modified to reduce
     # the number conjugate and transpose operations
-    A_t = batch_transpose(A)
     if m < n:
         # computing the SVD approximation of a transpose in order to
         # keep B shape minimal
-        Q = get_approximate_basis(A_t, q, niter=niter)
-        B_t = matmul(A, conjugate(Q))
+        Q = get_approximate_basis(A_t, q, niter=niter, M=M_t)
+        Q_c = conjugate(Q)
+        if M is None:
+            B_t = matmul(A, Q_c)
+        else:
+            B_t = matmul(A, Q_c) - matmul2(M, Q_c)
         U, S, V = torch.svd(B_t)
         V = Q.matmul(V)
     else:
-        Q = get_approximate_basis(A, q, niter=niter)
-        B = batch_transpose(matmul(A_t, conjugate(Q)))
-        U, S, V = torch.svd(B)
+        Q = get_approximate_basis(A, q, niter=niter, M=M)
+        Q_c = conjugate(Q)
+        if M is None:
+            B = matmul(A_t, Q_c)
+        else:
+            B = matmul(A_t, Q_c) - matmul2(M_t, Q_c)
+        U, S, V = torch.svd(batch_transpose(B))
         U = Q.matmul(U)
+
     return U, S, V
 
 
 def pca(A, q=None, center=True, niter=2):
-    r"""Performs Principal Component Analysis (PCA) on a low-rank matrix or
-    batches of such matrices.
+    r"""Performs Principal Component Analysis (PCA) on a low-rank matrix,
+    batches of such matrices, or sparse matrix.
 
     This function returns a namedtuple ``(U, S, V)`` which is the
     nearly optimal approximation of a singular value decomposition of
@@ -244,13 +273,28 @@ def pca(A, q=None, center=True, niter=2):
 
     dtype = get_floating_dtype(A)
 
-    if center:
-        if is_sparse(A):
-            raise NotImplementedError('PCA of sparse matrix')
+    if not center:
+        return svd(A, q, niter=niter)
 
-        ones_m1 = torch.ones(A.shape[:-1] + (1, ), dtype=dtype, device=A.device)
+    if is_sparse(A):
+        if len(A.shape) != 2:
+            raise ValueError('pca input is expected to be 2-dimensional tensor')
+        c = torch.sparse.sum(A, dim=-2) / m
+        # reshape c
+        column_indices = c.indices()[0]
+        indices = torch.zeros(2, len(column_indices),
+                              dtype=column_indices.dtype,
+                              device=column_indices.device)
+        indices[0] = column_indices
+        C_t = torch.sparse_coo_tensor(
+            indices, c.values(), (n, 1), dtype=dtype, device=A.device)
+
+        ones_m1_t = torch.ones(A.shape[:-2] + (1, m), dtype=dtype, device=A.device)
+        M = batch_transpose(torch.sparse.mm(C_t, ones_m1_t))
+        return svd(A, q, niter=niter, M=M)
+    else:
         c = A.sum(axis=-2) / m
-        c = c.reshape(A.shape[:-2] + (1, n))
-        return pca(A - ones_m1.matmul(c), q=q, center=False, niter=niter)
-
-    return svd(A, q, niter=niter)
+        C = c.reshape(A.shape[:-2] + (1, n))
+        ones_m1 = torch.ones(A.shape[:-1] + (1, ), dtype=dtype, device=A.device)
+        M = ones_m1.matmul(C)
+        return svd(A - M, q, niter=niter)
