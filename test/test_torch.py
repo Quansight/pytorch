@@ -9157,32 +9157,31 @@ class TestTorchDeviceType(TestCase):
             for density in [0.005, 0.1]:
                 run_subtest(None, size, (), device, density=density)
 
-
     @skipCUDAIfNoMagma
     @skipCPUIfNoLapack
     def test_pca(self, device):
-        from common_utils import random_lowrank_matrix
+        from common_utils import random_lowrank_matrix, random_sparse_matrix
 
         def run_subtest(guess_rank, actual_rank, matrix_size, batches, device, **options):
+            density = options.pop('density', 1)
             if isinstance(matrix_size, int):
                 rows = columns = matrix_size
             else:
                 rows, columns = matrix_size
-            a = random_lowrank_matrix(actual_rank, rows, columns, *batches, device=device)
+            if density == 1:
+                a_input = random_lowrank_matrix(actual_rank, rows, columns, *batches, device=device)
+                a = a_input
+            else:
+                a_input = random_sparse_matrix(rows, columns, density, device=device)
+                a = a_input.to_dense()
 
-            u, s, v = torch.pca(a, q=guess_rank, **options)
+            u, s, v = torch.pca(a_input, q=guess_rank, **options)
 
             self.assertEqual(s.shape[-1], guess_rank)
             self.assertEqual(u.shape[-2], rows)
             self.assertEqual(u.shape[-1], guess_rank)
             self.assertEqual(v.shape[-1], guess_rank)
             self.assertEqual(v.shape[-2], columns)
-
-            detect_rank = (s.abs() > 1e-5).sum(axis=-1)
-            if not (actual_rank * torch.ones(batches, device=device) == detect_rank).all():
-                # for debugging, to be removed
-                print(rows, columns, actual_rank, detect_rank, s)
-            self.assertEqual(actual_rank * torch.ones(batches, device=device), detect_rank)
 
             A1 = u.matmul(s.diag_embed()).matmul(v.transpose(-2, -1))
             ones_m1 = torch.ones(batches + (rows, 1), dtype=a.dtype, device=device)
@@ -9191,8 +9190,12 @@ class TestTorchDeviceType(TestCase):
             A2 = a - ones_m1.matmul(c)
             self.assertEqual(A1, A2)
 
-            U, S, V = torch.svd(A2)
-            self.assertEqual(s[..., :actual_rank], S[..., :actual_rank])
+            if density == 1:
+                # actual rank is known only for dense input
+                detect_rank = (s.abs() > 1e-5).sum(axis=-1)
+                self.assertEqual(actual_rank * torch.ones(batches, device=device), detect_rank)
+                U, S, V = torch.svd(A2)
+                self.assertEqual(s[..., :actual_rank], S[..., :actual_rank])
 
         all_batches = [(), (1,), (3,), (2, 3)]
         for actual_rank, size, all_batches in [
@@ -9210,6 +9213,13 @@ class TestTorchDeviceType(TestCase):
                     if guess_rank <= min(*size):
                         run_subtest(guess_rank, actual_rank, size, batches, device)
                         run_subtest(guess_rank, actual_rank, size[::-1], batches, device)
+
+        # sparse input
+        for guess_rank, size in [
+                (4, (17, 4)), (4, (4, 17)), (6, (17, 17)),
+                (10, (100, 40)), (10, (40, 100)), (300, (1000, 1000))]:
+            for density in [0.005, 0.1]:
+                run_subtest(guess_rank, None, size, (), device, density=density)
 
     def test_lerp(self, device):
         start_end_shapes = [(), (5,), (5, 5), (5, 5, 5)]
