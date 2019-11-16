@@ -63,6 +63,7 @@ TESTS = [
     'jit_disabled',
     'function_schema',
     'overrides',
+    'subclassing',
 ]
 
 # skip < 3.3 because mock is added in 3.3 and is used in rpc_fork and rpc_spawn
