@@ -44,7 +44,6 @@ def uniform(low=0.0, high=1.0, size=None, dtype=None, device=None):
         return r + 1j * i
     return r
 
-
 def get_floating_dtype(A):
     """Return the floating point dtype of tensor A.
     """
@@ -55,7 +54,9 @@ def get_floating_dtype(A):
 def get_matmul(A):
     """Return matrix multiplication implementation.
     """
-    if is_sparse(A):
+    if A is None:  # A is identity
+        return lambda A, other: other
+    elif is_sparse(A):
         return torch.sparse.mm
     else:
         return torch.matmul

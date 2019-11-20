@@ -4,6 +4,7 @@ from torch._six import inf
 from itertools import product
 from .lowrank import pca
 from .lowrank import svd as svd_lowrank
+from .lobpcg import lobpcg_basic as lobpcg
 
 
 __all__ = [
@@ -15,7 +16,7 @@ __all__ = [
     'einsum',
     'isfinite',
     'isinf',
-    'svd_lowrank',
+    'lobpcg',
     'lu',
     'lu_unpack',
     'norm',
@@ -23,6 +24,7 @@ __all__ = [
     'pca',
     'split',
     'stft',
+    'svd_lowrank',
     'tensordot',
     'unique',
     'unique_consecutive',
