@@ -84,8 +84,8 @@ def lobpcg_basic(A, B=None, k=1, X=None, n=None, iK=None, niter=10, tol=None,
              of eigenvectors.
 
     .. note: input tensors :math:`A` and :math:`B` must contain
-             symmetric positive definite matrices. By default,
-             math:`B` is identity matrix.
+             symmetric positive definite matrices.
+             By default, math:`B` is identity matrix.
 
     .. note: input tensor :math:`iK` is an inverse of preconditioner matrix.
 
