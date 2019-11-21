@@ -365,8 +365,10 @@ BLAS and LAPACK Operations
 .. autofunction:: svd_lowrank
 .. autofunction:: pca
 .. autofunction:: symeig
+.. autofunction:: lobpcg
 .. autofunction:: trapz
 .. autofunction:: triangular_solve
+
 
 Utilities
 ----------------------------------
