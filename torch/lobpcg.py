@@ -1,20 +1,4 @@
-"""Locally Optimal Block Preconditioned Conjugate Gradient methods
-
-
-References:
-
-  [1] Andrew V. Knyazev. (2001) Toward the Optimal Preconditioned Eigensolver:
-  Locally Optimal Block Preconditioned Conjugate Gradient Method. SIAM
-  J. Sci. Comput., 23(2), 517–541. (25 pages)
-  https://epubs.siam.org/doi/abs/10.1137/S1064827500366124
-  A report version: http://ccm.ucdenver.edu/reports/rep149.pdf
-
-  [2] Jed A. Duersch, Meiyue Shao, Chao Yang, Ming Gu. (2018)  A Robust and
-  Efficient Implementation of LOBPCG.  SIAM J. Sci. Comput., 40(5),
-  C655–C676. (22 pages)
-  https://epubs.siam.org/doi/abs/10.1137/17M1129830
-  https://arxiv.org/pdf/1704.07458.pdf
-
+"""Locally Optimal Block Preconditioned Conjugate Gradient methods.
 """
 
 import torch
@@ -48,6 +32,12 @@ def RayleighRitz(S, A, B=None, out=None):
       E (Tensor): tensor of eigenvalues of size :math:`(*, n)`
       C (Tensor): tensor of eigenvectors of size :math:`(*, n, n)`
 
+    References:
+
+      [2] Jed A. Duersch, Meiyue Shao, Chao Yang, Ming Gu. (2018) A
+      Robust and Efficient Implementation of LOBPCG.  SIAM
+      J. Sci. Comput., 40(5), C655–C676. (22 pages)
+      `https://epubs.siam.org/doi/abs/10.1137/17M1129830`_
     """
     mm = torch.matmul
     mm_S = get_matmul(S)
@@ -78,7 +68,8 @@ def lobpcg_basic(A, B=None, k=1, X=None, n=None, iK=None, niter=10, tol=None,
     eigenvalue problem.
 
     .. note:: The implementation is based on the Algorithm 1 from
-              Duersch et al, 2018.
+              Duersch et al, 2018 that is a minor modification of the
+              Algorithm 5.1 from A. V. Knyazev, 2001.
 
     .. note: input tensor :math:`X` contains a initial approximation
              of eigenvectors.
@@ -121,9 +112,22 @@ def lobpcg_basic(A, B=None, k=1, X=None, n=None, iK=None, niter=10, tol=None,
                  collector function at each iteration step).
 
     Returns:
+
       E (Tensor): tensor of eigenvalues of size :math:`(*, k)`
       X (Tensor): tensor of eigenvectors of size :math:`(*, m, k)`
 
+    References:
+
+      [1] Andrew V. Knyazev. (2001) Toward the Optimal Preconditioned
+      Eigensolver: Locally Optimal Block Preconditioned Conjugate
+      Gradient Method. SIAM J. Sci. Comput., 23(2), 517–541. (25
+      pages)
+      `https://epubs.siam.org/doi/abs/10.1137/S1064827500366124`_
+
+      [2] Jed A. Duersch, Meiyue Shao, Chao Yang, Ming Gu. (2018) A
+      Robust and Efficient Implementation of LOBPCG.  SIAM
+      J. Sci. Comput., 40(5), C655–C676. (22 pages)
+      `https://epubs.siam.org/doi/abs/10.1137/17M1129830`_
     """
     dtype = get_floating_dtype(A)
     device = A.device
