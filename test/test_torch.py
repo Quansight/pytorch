@@ -7688,7 +7688,7 @@ class TestTorchDeviceType(TestCase):
             large_expanded = large.expand(*dims_full)
             small2 = None
             small2_expanded = None
-            if fn in fns_3_args:
+            if fn in fns_3_args or fn in fns_value_kwarg:
                 # create another smaller tensor
                 (dims_small2, _, _) = self._select_broadcastable_dims(dims_full)
                 small2 = torch.randn(*dims_small2, device=device).float()
@@ -7746,6 +7746,8 @@ class TestTorchDeviceType(TestCase):
                         return fntorch(t1, t2 < 0.5, 1.0)
                     elif fn in fns_3_args:
                         return fntorch(t1, 1.0, t2, t3)
+                    elif fn in fns_value_kwarg:
+                        return fntorch(t1, t2, t3, value=1.0)
                     else:
                         return fntorch(t1, t2)
 
@@ -7781,6 +7783,8 @@ class TestTorchDeviceType(TestCase):
                     return t0_fn(t1, t2, lambda x, y, z: x + y + z)
                 elif fn in fns_3_args:
                     return t0_fn(1.0, t1, t2)
+                elif fn in fns_value_kwarg:
+                    return t0_fn(t1, t2, value=1.0)
                 else:
                     return t0_fn(t1)
             # in-place pointwise operations don't actually work if the in-place
@@ -7807,7 +7811,7 @@ class TestTorchDeviceType(TestCase):
                 else:
                     tensorfn_inplace(t0, t1, t2)
 
-            if fn not in fns_3_args:
+            if fn not in fns_3_args and fn not in fns_value_kwarg:
                 _test_in_place_broadcastable(small, large_expanded)
                 _test_in_place_broadcastable(small, large)
             else:
@@ -13460,8 +13464,7 @@ class TestTorchDeviceType(TestCase):
         a = torch.randn(100, 90, dtype=dtype, device=device)
         b = a.clone().normal_()
 
-        with self.assertWarnsRegex(UserWarning, "add is deprecated"):
-            res_add = torch.add(a, -1, b)
+        res_add = torch.add(a, -1, b)
         res_csub = a.clone()
         res_csub.sub_(b)
         self.assertEqual(res_add, res_csub)
@@ -13470,8 +13473,7 @@ class TestTorchDeviceType(TestCase):
         a = torch.randn(100, 100, dtype=dtype, device=device)
 
         scalar = 123.5
-        with self.assertWarnsRegex(UserWarning, "add is deprecated"):
-            res_add = torch.add(a, -scalar)
+        res_add = torch.add(a, -scalar)
         res_csub = a.clone()
         res_csub.sub_(scalar)
         self.assertEqual(res_add, res_csub)
@@ -13708,19 +13710,19 @@ class TestTorchDeviceType(TestCase):
             res2.addbmm_(1., .5, b1, b2)
         self.assertEqual(res2, res.sum(0, False) * 2.5)
 
-        with self.assertWarnsRegex(UserWarning, "addbmm_ is deprecated"):
+        with self.assertWarnsRegex(UserWarning, "addbmm is deprecated"):
             res3 = torch.addbmm(1, res2, 0, b1, b2)
         self.assertEqual(res3, res2)
 
-        with self.assertWarnsRegex(UserWarning, "addbmm_ is deprecated"):
+        with self.assertWarnsRegex(UserWarning, "addbmm is deprecated"):
             res4 = torch.addbmm(1, res2, .5, b1, b2)
         self.assertEqual(res4, res.sum(0, False) * 3)
 
-        with self.assertWarnsRegex(UserWarning, "addbmm_ is deprecated"):
+        with self.assertWarnsRegex(UserWarning, "addbmm is deprecated"):
             res5 = torch.addbmm(0, res2, 1, b1, b2)
         self.assertEqual(res5, res.sum(0, False))
 
-        with self.assertWarnsRegex(UserWarning, "addbmm_ is deprecated"):
+        with self.assertWarnsRegex(UserWarning, "addbmm is deprecated"):
             res6 = torch.addbmm(.1, res2, .5, b1, b2)
         self.assertEqual(res6, res2 * .1 + (res.sum(0) * .5))
 
@@ -14417,18 +14419,18 @@ tensor_op_tests = [
         1e-1, 1e-1, 1e-4, _float_types_with_bfloat16),
     ('addbmm', 'scalar', _small_2d, lambda t, d: [_number(0.4, 2, t), _small_3d(t, d), _small_3d(t, d)],
         1e-1, 1e-1, 1e-4, _float_types_with_bfloat16, True,
-        [_wrap_assert_warns(UserWarning, "addbmm is deprecated")]),
+        [_wrap_assert_warns(UserWarning, "addbmm_? is deprecated")]),
     ('addbmm', 'two_scalars', _small_2d, lambda t, d: [_number(0.5, 3, t), _number(0.4, 2, t), _small_3d(t, d), _small_3d(t, d)],
         1e-1, 1e-1, 1e-4, _float_types_with_bfloat16, True,
-        [_wrap_assert_warns(UserWarning, "addbmm is deprecated")]),
+        [_wrap_assert_warns(UserWarning, "addbmm_? is deprecated")]),
     ('baddbmm', '', _small_3d, lambda t, d: [_small_3d(t, d), _small_3d(t, d)],
         1e-2, 1e-1, 1e-4, _float_types_with_bfloat16),
     ('baddbmm', 'scalar', _small_3d, lambda t, d: [_number(0.4, 2, t), _small_3d(t, d), _small_3d(t, d)],
         1e-2, 1e-1, 1e-4, _float_types_with_bfloat16, True,
-        [_wrap_assert_warns(UserWarning, "baddbmm is deprecated")]),
+        [_wrap_assert_warns(UserWarning, "baddbmm_? is deprecated")]),
     ('baddbmm', 'two_scalars', _small_3d, lambda t, d: [_number(0.5, 3, t), _number(0.4, 2, t), _small_3d(t, d), _small_3d(t, d)],
         1e-2, 1e-1, 1e-4, _float_types_with_bfloat16, True,
-        [_wrap_assert_warns(UserWarning, "baddbmm is deprecated")]),
+        [_wrap_assert_warns(UserWarning, "baddbmm_? is deprecated")]),
     ('bmm', '', _small_3d, lambda t, d: [_small_3d(t, d)],
         1e-5, 1e-5, 1e-5, _float_types_no_half, False),
     ('addcdiv', '', _small_2d,
@@ -14436,10 +14438,13 @@ tensor_op_tests = [
                       _small_2d(t, d, has_zeros=False)], 1, 1e-5, 1e-3),
     ('addcdiv', 'scalar', _small_2d,
         lambda t, d: [_number(2.8, 1, t), _small_2d(t, d),
-                      _small_2d(t, d, has_zeros=False)], 1, 1e-5, 1e-3),
+                      _small_2d(t, d, has_zeros=False)], 1, 1e-5, 1e-3,
+        _types, True, [_wrap_assert_warns(UserWarning, "addcdiv_? is deprecated")]),
     ('addcmul', '', _small_3d, lambda t, d: [_small_3d(t, d), _small_3d(t, d)], 1e-2, 2e-5, 1e-3),
     ('addcmul', 'scalar', _small_3d,
-        lambda t, d: [_number(0.4, 2, t), _small_3d(t, d), _small_3d(t, d)], 1e-2),
+        lambda t, d: [_number(0.4, 2, t), _small_3d(t, d), _small_3d(t, d)], 1e-2,
+        1e-5, 1e-5, _types, True,
+        [_wrap_assert_warns(UserWarning, "addcmul_? is deprecated")]),
     ('addmm', '', _medium_2d, lambda t, d: [_medium_2d(t, d), _medium_2d(t, d)],
         1e-1, 1e-1, 1e-4, _float_types_with_bfloat16),
     ('addmm', 'scalar', _medium_2d,
