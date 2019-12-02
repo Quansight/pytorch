@@ -4,7 +4,7 @@ from torch._six import inf
 from itertools import product
 from .lowrank import pca
 from .lowrank import svd as svd_lowrank
-from .lobpcg import lobpcg_basic as lobpcg
+from .lobpcg import lobpcg
 
 
 from ._overrides import torch_function_dispatch
