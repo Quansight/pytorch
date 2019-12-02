@@ -12891,89 +12891,98 @@ class TestTorchDeviceType(TestCase):
     @skipCUDAIfNoMagma
     @skipCPUIfNoLapack
     @dtypes(torch.double)
-    def test_lobpcg(self, device, dtype):
-        from common_utils import random_symmetric_pd_matrix, random_matrix, random_sparse_pd_matrix
-        from torch.lobpcg import RayleighRitz, get_matmul, lobpcg_basic
+    def test_lobpcg_basic(self, device, dtype):
+        self._test_lobpcg_method(device, dtype, 'basic')
 
-        # check Rayleigh-Ritz procedure
-        for batches in [(), (2,), (2, 3)]:
-            m, n = 3, 2
-            A = random_symmetric_pd_matrix(m, *batches, device=device, dtype=dtype)
-            S = random_matrix(m, n, *batches, device=device, dtype=dtype)
-            mm = torch.matmul
-            mm_A = get_matmul(A)
-            e, C = RayleighRitz(S, A)
-            self.assertEqual(e.shape[-1], n)
-            self.assertEqual(C.shape[-2:], (n, n))
-            SAS = mm(S.transpose(-2, -1), mm_A(A, S))
-            CSASC = mm(C.transpose(-2, -1), mm(SAS, C))
-            self.assertEqual(CSASC, e.diag_embed())
+    @skipCUDAIfNoMagma
+    @skipCPUIfNoLapack
+    @dtypes(torch.double)
+    def test_lobpcg_ortho(self, device, dtype):
+        self._test_lobpcg_method(device, dtype, 'ortho')
 
-            B = random_symmetric_pd_matrix(m, *batches, device=device, dtype=dtype)
-            mm_B = get_matmul(B)
-            e, C = RayleighRitz(S, A, B=B)
-            SAS = mm(S.transpose(-2, -1), mm_A(A, S))
-            SBS = mm(S.transpose(-2, -1), mm_B(B, S))
-            CSASC = mm(C.transpose(-2, -1), mm(SAS, C))
-            CSBSC = mm(C.transpose(-2, -1), mm(SBS, C))
-            self.assertEqual(CSASC, e.diag_embed())
-            self.assertEqual(CSBSC, torch.eye(n, dtype=dtype, device=device).expand_as(CSBSC))
+    def _test_lobpcg_method(self, device, dtype, method):
+        from common_utils import random_symmetric_pd_matrix, random_sparse_pd_matrix
+        from torch.lobpcg import get_matmul, lobpcg, qform
 
-        # check lobpcg_basic
+        def test_tracker(istep, A, B, X, E, R, rerr, nc, k, tol, **params):
+            if k <= nc:
+                dtype = X.dtype
+                device = X.device
+
+                # Check convergence
+                self.assertLessEqual(rerr[:k].max(), tol)
+
+                # Check B-orthogonality
+                I = torch.eye(k, k, dtype=dtype, device=device)
+                self.assertEqual(qform(B, X[:, :k]), I)
+
+                # Check block equation
+                self.assertEqual(qform(A, X[:, :k]) / E[:k], I, prec=0.1)
+
+        orig_lobpcg = lobpcg
+
+        def lobpcg(*args, **kwargs):
+            kwargs['tracker'] = test_tracker
+            kwargs['niter'] = 1000
+            kwargs['method'] = method
+            kwargs['tol'] = 1e-4
+            return orig_lobpcg(*args, **kwargs)
+        prec = 5e-2
+
+        # check dense input
         mm = torch.matmul
-        niter = 200
         for batches in [(), (2,), (2, 3)]:
             for m, n, k in [
                     (9, 3, 1),
+                    (9, 3, 2),
                     (9, 2, 2),
                     (100, 15, 5),
             ]:
+                # skip tests that are known to fail with the basic
+                # LOBPCG method due to calling cholesky on singular
+                # input
+                if method == 'basic' and (m, n, k) in [(9, 2, 2), (100, 15, 5)]:
+                    continue
                 A = random_symmetric_pd_matrix(m, *batches, device=device, dtype=dtype)
                 B = random_symmetric_pd_matrix(m, *batches, device=device, dtype=dtype)
                 mm_A = get_matmul(A)
                 mm_B = get_matmul(B)
 
                 # classical eigenvalue problem, smallest eigenvalues
-                residuals = []
-                E, V = lobpcg_basic(A, k=k, n=n, niter=niter,
-                                    residual_collector=residuals.append)
-                self.assertLess(len(residuals), niter)
+                E, V = lobpcg(A, k=k, n=n)
                 self.assertEqual(E.shape, batches + (k,))
                 self.assertEqual(V.shape, batches + (m, k))
-                self.assertEqual(mm_A(A, V), mm(V, E.diag_embed()))
+                self.assertEqual(mm_A(A, V), mm(V, E.diag_embed()), prec=prec)
                 e = torch.symeig(A)[0]
                 e_smallest = e[..., :k]
                 self.assertEqual(E, e_smallest)
 
                 # classical eigenvalue problem, largest eigenvalues
-                residuals = []
-                E, V = lobpcg_basic(A, k=k, n=n, niter=niter, largest=True,
-                                    residual_collector=residuals.append)
-                self.assertLess(len(residuals), niter)
+                E, V = lobpcg(A, k=k, n=n, largest=True)
                 e_largest, _ = torch.sort(e[..., -k:], descending=True)
-                self.assertEqual(E, e_largest)
-                self.assertEqual(mm_A(A, V), mm(V, E.diag_embed()))
+                self.assertEqual(E, e_largest, prec=prec)
+                self.assertEqual(mm_A(A, V), mm(V, E.diag_embed()), prec=prec)
 
                 # generalized eigenvalue problem, smallest eigenvalues
-                E, V = lobpcg_basic(A, B=B, k=k, n=n, niter=niter)
-                self.assertEqual(mm_A(A, V), mm(mm_B(B, V), E.diag_embed()))
+                E, V = lobpcg(A, B=B, k=k, n=n)
+                self.assertEqual(mm_A(A, V), mm(mm_B(B, V), E.diag_embed()), prec=prec)
 
                 # generalized eigenvalue problem, largest eigenvalues
-                residuals = []
-                E, V = lobpcg_basic(A, B=B, k=k, n=n, niter=niter, largest=True,
-                                    tol=m * 1e-10,
-                                    residual_collector=residuals.append)
-                self.assertLess(len(residuals), niter)
-                self.assertEqual(mm_A(A, V), mm(mm_B(B, V), E.diag_embed()))
+                E, V = lobpcg(A, B=B, k=k, n=n, largest=True)
+                self.assertEqual(mm_A(A, V) / E.max(), mm(mm_B(B, V), (E / E.max()).diag_embed()),
+                                 prec=prec * 5)
 
-        # check lobpcg_basic, sparse input
-        niter = 500
+        # check sparse input
         for m, n, k, density in [
                 (5, 1, 1, 0.8),
                 (9, 3, 2, 0.5),
-                (100, 1, 1, 0.01),
-                (1000, 7, 3, 0.001),
+                (100, 1, 1, 0.1),
+                (1000, 7, 3, 0.01),
         ]:
+            # skip tests that are known to fail with the basic LOBCG
+            # method due to insufficient accuracy
+            if method == 'basic' and (m, n, k, density) in [(1000, 7, 3, 0.01)]:
+                continue
             A = random_sparse_pd_matrix(m, density=density, device=device, dtype=dtype)
             B = random_sparse_pd_matrix(m, density=density, device=device, dtype=dtype)
             A_eigenvalues = torch.arange(1, m + 1, dtype=dtype) / m
@@ -12982,26 +12991,70 @@ class TestTorchDeviceType(TestCase):
             e_smallest = A_eigenvalues[..., :k]
             e_largest, _ = torch.sort(A_eigenvalues[..., -k:], descending=True)
 
-            # classical eigenvalue problem
-            residuals = []
+            # classical eigenvalue problem, smallest eigenvalues
+            E, V = lobpcg(A, k=k, n=n)
+            self.assertEqual(E, e_smallest)            
+            self.assertEqual(mm_A(A, V), mm(V, E.diag_embed()), prec=prec)
 
-            def collect_residuals(res):
-                residuals.append(res)
-
-            E, V = lobpcg_basic(A, k=k, n=n, niter=niter,
-                                residual_collector=collect_residuals)
-            self.assertLess(len(residuals), niter)
-            self.assertEqual(mm_A(A, V), mm(V, E.diag_embed()))
-            self.assertEqual(E, e_smallest)
-            E, V = lobpcg_basic(A, k=k, n=n, niter=niter, largest=True)
-            self.assertEqual(mm_A(A, V), mm(V, E.diag_embed()))
+            # classical eigenvalue problem, largest eigenvalues
+            E, V = lobpcg(A, k=k, n=n, largest=True)
+            self.assertEqual(mm_A(A, V), mm(V, E.diag_embed()), prec=prec)
             self.assertEqual(E, e_largest)
 
-            # generalized eigenvalue problem
-            E, V = lobpcg_basic(A, B=B, k=k, n=n, niter=niter)
-            self.assertEqual(mm_A(A, V), mm(mm_B(B, V), E.diag_embed()))
-            E, V = lobpcg_basic(A, B=B, k=k, n=n, niter=niter, largest=True)
-            self.assertEqual(mm_A(A, V), mm(mm_B(B, V), E.diag_embed()))
+            # generalized eigenvalue problem, smallest eigenvalues
+            E, V = lobpcg(A, B=B, k=k, n=n)
+            self.assertEqual(mm_A(A, V), mm_B(B, mm(V, E.diag_embed())), prec=prec)
+
+            # generalized eigenvalue problem, largest eigenvalues
+            E, V = lobpcg(A, B=B, k=k, n=n, largest=True)
+            self.assertEqual(mm_A(A, V) / E.max(), mm(mm_B(B, V), (E / E.max()).diag_embed()),
+                             prec=prec)
+
+    @skipCPUIfNoLapack
+    @dtypes(torch.double)
+    def test_lobpcg_utils(self, device, dtype):
+        from common_utils import random_symmetric_pd_matrix, random_matrix
+        from torch.lobpcg import get_matmul, svqb, ortho, get_RR_transform
+        mm = torch.matmul
+
+        for m, n in [(5, 1), (6, 2), (9, 3), (100, 5)]:
+            # check svqb
+            M = random_symmetric_pd_matrix(m, device=device, dtype=dtype)
+            Uin = random_matrix(m, n, device=device)
+            mm_M = get_matmul(M)
+            for drop in [False, True]:
+                Uout = svqb(M, Uin, drop=drop)
+                self.assertEqual(mm(Uout.transpose(-2, -1), mm_M(M, Uout)), torch.eye(Uout.shape[-1], device=device, dtype=dtype))
+
+            nv = max(1, n - 1)
+            V = svqb(M, random_matrix(m, nv, device=device), drop=False)
+            self.assertEqual(mm(V.transpose(-2, -1), mm_M(M, V)), torch.eye(V.shape[-1], device=device, dtype=dtype))
+
+            # check ortho
+            Uin = random_matrix(m, n, device=device)
+            U, _ = ortho(M, Uin, V, use_drop=False)
+            self.assertEqual(mm(U.transpose(-2, -1), mm_M(M, U)), torch.eye(U.shape[-1], device=device, dtype=dtype))
+            self.assertEqual(mm(V.transpose(-2, -1), mm_M(M, U)), torch.zeros((V.shape[-1], U.shape[-1]), device=device, dtype=dtype))
+
+            U, _ = ortho(M, Uin, V, use_drop=True)
+            self.assertEqual(mm(U.transpose(-2, -1), mm_M(M, U)), torch.eye(U.shape[-1], device=device, dtype=dtype))
+            self.assertEqual(mm(V.transpose(-2, -1), mm_M(M, U)), torch.zeros((V.shape[-1], U.shape[-1]), device=device, dtype=dtype))
+
+            Uin[:, 0] = V[:, 0]
+            U, _ = ortho(M, Uin, V, use_drop=True)
+            self.assertEqual(mm(U.transpose(-2, -1), mm_M(M, U)), torch.eye(U.shape[-1], device=device, dtype=dtype))
+            self.assertEqual(mm(V.transpose(-2, -1), mm_M(M, U)), torch.zeros((V.shape[-1], U.shape[-1]), device=device, dtype=dtype))
+
+            # check get_RR_transform
+            A = random_symmetric_pd_matrix(m, device=device, dtype=dtype)
+            S = random_matrix(m, n, device=device)
+            for B in [None, random_symmetric_pd_matrix(m, device=device, dtype=dtype)]:
+                Ri = get_RR_transform(B, S)
+                M = torch.chain_matmul(Ri.transpose(-2, -1), S.transpose(-2, -1), get_matmul(A)(A, S), Ri)
+                E, Z = torch.symeig(M, eigenvectors=True)
+                C = torch.matmul(Ri, Z)
+                self.assertEqual(torch.chain_matmul(S.transpose(-2, -1), get_matmul(A)(A, S), C),
+                                 torch.chain_matmul(S.transpose(-2, -1), get_matmul(B)(B, S), C, E.diag_embed()))
 
     @onlyCPU
     @dtypes(torch.bfloat16, torch.float, torch.double)
