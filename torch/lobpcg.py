@@ -1,5 +1,7 @@
 """Locally Optimal Block Preconditioned Conjugate Gradient methods.
 """
+# Author: Pearu Peterson
+# Created: November 2019
 
 import torch
 from .lowrank import get_matmul, get_floating_dtype
@@ -22,11 +24,6 @@ def lobpcg(A, B=None, k=1, X=None, n=None, iK=None, niter=1000, tol=None,
       `method="ortho"` - the LOBPCG method with orthogonal basis
       selection [StathopoulosEtal2002]. Supports dense and sparse
       matrices. A robust method.
-
-      `method="auto-ortho"` - the LOBPCG method with automatic
-      switching to orthogonal basis selection introduced by Jed
-      Duersch, see [DuerschEtal2018]. Supports dense and sparse
-      matrices. An efficient robust method. [NOT IMPLEMENTED]
 
     .. note:: In general, the basic method spends least time per
       iteration. However, the robust methods converge much faster and
@@ -88,14 +85,36 @@ def lobpcg(A, B=None, k=1, X=None, n=None, iK=None, niter=1000, tol=None,
                    `X` - the current approximation of eigenvectors
                    `E` - the current approximation of eigenvalues
                    `R` - the current residual
+                   `nc` - the current number of converged eigenpairs
+                   `rerr` - the current state of convergence criteria
+                   `A`, `B`, `X` - the input matrices
+                   `k`, `n`, `tol`, ... - the input parameters
+                   `S`, `W`, `Z`, `np`, `ns` - various work arrays and
+                     parameters of the iteration process
 
                  The recommended signature of tracker callable is
-                 `tracker(istep, X, E, R, **params)` where `params`
-                 dictionary may contain other iteration parameters
-                 that are specific to the selected method.
+                 `tracker(istep, X, E, R, **params) -> None` where
+                 `params` dictionary may contain other iteration
+                 parameters that are specific to the selected
+                 method. For instance, when `method` is `"basic"` then
+                 the `params` dictionary contains:
+
+                   `R_cond` - the condition number of Cholesky
+                     factorization
+
+                 When `method` is `ortho` then `params` contains:
+
+                   `ortho.UMUmI_rerr`, `ortho.VMU_rerr`, `ortho.i`,
+                   `ortho.j` - the statistics from orthogonalization
+                   process.
 
                  Note that when `tracker` stores its arguments, it
                  must make copies of these.
+
+                 Note that when `tracker` returns a non-zero value,
+                 the iteration process will be interrupted and the
+                 current approximation of the eigenpairs will be
+                 returned as they are.
 
       params (dict, optional): various method-dependent parameters to
                  LOBPCG algorithms.
@@ -150,7 +169,7 @@ def lobpcg(A, B=None, k=1, X=None, n=None, iK=None, niter=1000, tol=None,
     if X is None:
         if n is None:
             n = k
-        X = torch.randn(A.shape[:-2] + (m, n), device=device, dtype=dtype)
+        X = torch.randn((m, n), device=device, dtype=dtype)
     else:
         if X.shape[:-1] != A.shape[:-1]:
             raise ValueError('A and X have inconsistent shapes: {}[:-1] != {}[:-1]'
@@ -197,10 +216,10 @@ def lobpcg(A, B=None, k=1, X=None, n=None, iK=None, niter=1000, tol=None,
     if method is None:
         method = 'ortho'
 
-    return dict(basic=lobpcg_worker_basic,
-                ortho=lobpcg_worker_ortho)[method](
-                    A, B, X, S, m, n, k, iK, niter, tol, largest,
-                    tracker, converged_eigenpairs_count, **params)
+    return {'basic': lobpcg_worker_basic,
+            'ortho': lobpcg_worker_ortho}[method](
+                A, B, X, S, m, n, k, iK, niter, tol, largest,
+                tracker, converged_eigenpairs_count, **params)
 
 
 def batches_apply(func, ndim, tensors):
@@ -387,7 +406,7 @@ def get_RR_transform(B, S):
     Returns:
       Ri (tensor): upper-triangular transformation matrix of size
                    :math:`(n, n)`.
-
+      R_cond (float) : condition number of the Cholesky factorization
     """
     mm = torch.matmul
     SBS = qform(B, S)
@@ -398,6 +417,8 @@ def get_RR_transform(B, S):
     R = torch.cholesky(dd * SBS, upper=True)
     # TODO: use LAPACK ?trtri as R is upper-triangular
     Rinv = R.inverse()
+    R_diag = R.diagonal
+    R_cond = R
     return Rinv * d_
 
 
@@ -448,6 +469,9 @@ def lobpcg_worker_basic(A, B, X, S, m, n, k, iK, niter, tol, largest, tracker,
 
     # Rayleigh-Ritz procedure, initialize
     Ri = get_RR_transform(B, X)
+    R_diag_abs = Ri.diagonal(0, -2, -1).abs()
+    R_cond = R_diag_abs.max() / R_diag_abs.min()
+
     M = qform(qform(A, X), Ri)
     E, Z = symeig(M, largest)
     X = mm(X, mm(Ri, Z))
@@ -460,9 +484,10 @@ def lobpcg_worker_basic(A, B, X, S, m, n, k, iK, niter, tol, largest, tracker,
     S[..., n + np:ns] = W
 
     tracker_args = dict(istep=0, X=X, E=E, R=R, S=S, W=W, k=k, n=n,
-                        A=A, B=B, tol=tol,
+                        A=A, B=B, tol=tol, R_cond=R_cond,
                         nc=nc, np=np, ns=ns, Z=Z, rerr=rerr)
-    tracker(**tracker_args)
+    if tracker(**tracker_args):
+        niter = 0  # skip iteration
 
     while nc < k and niter:
         niter -= 1
@@ -471,6 +496,10 @@ def lobpcg_worker_basic(A, B, X, S, m, n, k, iK, niter, tol, largest, tracker,
 
         # Rayleigh-Ritz procedure
         Ri = get_RR_transform(B, S_)
+        R_diag_abs = Ri.diagonal(0, -2, -1).abs()
+        R_cond = R_diag_abs.max() / R_diag_abs.min()
+
+        tracker_args['R_cond'] = R_cond
         M = qform(qform(A, S_), Ri)
         E_, Z = symeig(M, largest)
 
@@ -495,14 +524,10 @@ def lobpcg_worker_basic(A, B, X, S, m, n, k, iK, niter, tol, largest, tracker,
         S[:, n + np:ns] = W
 
         tracker_args['istep'] += 1
-        tracker_args['nc'] = nc
-        tracker_args['np'] = np
-        tracker_args['ns'] = ns
-        tracker_args['R'] = R
-        tracker_args['W'] = W
-        tracker_args['Z'] = Z
-        tracker_args['rerr'] = rerr
-        tracker(**tracker_args)
+        tracker_args.update(
+            nc=nc, np=np, ns=ns, rerr=rerr, R_cond=R_cond, R=R, W=W, Z=Z)
+        if tracker(**tracker_args):
+            break
 
     return E[:k], X[:, :k]
 
@@ -535,7 +560,8 @@ def lobpcg_worker_ortho(A, B, X, S, m, n, k, iK, niter, tol, largest, tracker,
                         tol=tol,
                         nc=nc, np=np, ns=ns, Z=Z, rerr=rerr)
     tracker_args.update(ortho_stats)
-    tracker(**tracker_args)
+    if tracker(**tracker_args):
+        niter = 0  # skip iteration
 
     while nc < k and niter:
         niter -= 1
@@ -566,14 +592,9 @@ def lobpcg_worker_ortho(A, B, X, S, m, n, k, iK, niter, tol, largest, tracker,
         S[:, n + np:ns] = W
 
         tracker_args['istep'] += 1
-        tracker_args['nc'] = nc
-        tracker_args['np'] = np
-        tracker_args['ns'] = ns
-        tracker_args['rerr'] = rerr
-        tracker_args['R'] = R
-        tracker_args['W'] = W
-        tracker_args['Z'] = Z
-        tracker_args.update(ortho_stats)
-        tracker(**tracker_args)
+        tracker_args.update(
+            ortho_stats, nc=nc, np=np, ns=ns, rerr=rerr, R=R, W=W, Z=Z)
+        if tracker(**tracker_args):
+            break
 
     return E[:k], X[:, :k]
