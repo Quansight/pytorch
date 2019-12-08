@@ -13010,6 +13010,7 @@ class TestTorchDeviceType(TestCase):
             self.assertEqual(mm_A(A, V) / E.max(), mm(mm_B(B, V), (E / E.max()).diag_embed()),
                              prec=prec)
 
+    @skipCUDAIfNoMagma
     @skipCPUIfNoLapack
     @dtypes(torch.double)
     def test_lobpcg_utils(self, device, dtype):
