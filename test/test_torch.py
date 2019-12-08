@@ -13552,7 +13552,7 @@ class TestTorchDeviceType(TestCase):
                 self.assertEqual(qform(B, X[:, :k]), I)
 
                 # Check block equation
-                self.assertEqual(qform(A, X[:, :k]) / E[:k], I, prec=0.1)
+                self.assertEqual(qform(A, X[:, :k]) / E[:k], I, prec=0.2)
 
         orig_lobpcg = lobpcg
 
@@ -13605,7 +13605,7 @@ class TestTorchDeviceType(TestCase):
                 # generalized eigenvalue problem, largest eigenvalues
                 E, V = lobpcg(A, B=B, k=k, n=n, largest=True)
                 self.assertEqual(mm_A(A, V) / E.max(), mm(mm_B(B, V), (E / E.max()).diag_embed()),
-                                 prec=prec * 5)
+                                 prec=prec * 15)
 
         # check sparse input
         for m, n, k, density in [
