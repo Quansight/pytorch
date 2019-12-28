@@ -13523,6 +13523,36 @@ class TestTorchDeviceType(TestCase):
         Xhat = torch.mm(torch.mm(v, torch.diag(e.select(1, 0))), v.t())
         self.assertEqual(X, Xhat, 1e-8, 'VeV\' wrong')
 
+    @unittest.skipIf(not TEST_SCIPY, "Scipy not found")
+    def test_lobpcg_ortho_scipy(self, device):
+        from common_utils import random_sparse_pd_matrix
+        from torch.lobpcg import get_matmul, lobpcg
+        from torch.lobpcg import numpy_backend as torch
+        mm = torch.matmul
+        method = 'ortho'
+        dtype = torch.float64
+        prec = 5e-2
+
+        # check sparse input
+        for m, n, k, density in [
+                (5, 1, 1, 0.8),
+                (9, 3, 2, 0.5),
+                (100, 1, 1, 0.1),
+                (1000, 7, 3, 0.01),
+        ][:1]:
+            A = random_sparse_pd_matrix(m, density=density, device=device, dtype=dtype, torch=torch)
+            B = random_sparse_pd_matrix(m, density=density, device=device, dtype=dtype, torch=torch)
+            A_eigenvalues = torch.arange(1, m + 1, dtype=dtype) / m
+            mm_A = get_matmul(A)
+            mm_B = get_matmul(B)
+            e_smallest = A_eigenvalues[..., :k]
+            e_largest, _ = torch.sort(A_eigenvalues[..., -k:], descending=True)
+
+            # classical eigenvalue problem, smallest eigenvalues
+            E, V = lobpcg(A, k=k, n=n, method=method, largest=False)
+            self.assertEqual(E, e_smallest)
+            self.assertEqual(mm_A(A, V), mm(V, torch.diag_embed(E)), prec=prec)
+
     @skipCUDAIfNoMagma
     @skipCPUIfNoLapack
     @dtypes(torch.double)
@@ -13584,7 +13614,7 @@ class TestTorchDeviceType(TestCase):
                 mm_B = get_matmul(B)
 
                 # classical eigenvalue problem, smallest eigenvalues
-                E, V = lobpcg(A, k=k, n=n)
+                E, V = lobpcg(A, k=k, n=n, largest=False)
                 self.assertEqual(E.shape, batches + (k,))
                 self.assertEqual(V.shape, batches + (m, k))
                 self.assertEqual(mm_A(A, V), mm(V, E.diag_embed()), prec=prec)
@@ -13599,7 +13629,7 @@ class TestTorchDeviceType(TestCase):
                 self.assertEqual(mm_A(A, V), mm(V, E.diag_embed()), prec=prec)
 
                 # generalized eigenvalue problem, smallest eigenvalues
-                E, V = lobpcg(A, B=B, k=k, n=n)
+                E, V = lobpcg(A, B=B, k=k, n=n, largest=False)
                 self.assertEqual(mm_A(A, V), mm(mm_B(B, V), E.diag_embed()), prec=prec)
 
                 # generalized eigenvalue problem, largest eigenvalues
@@ -13627,7 +13657,7 @@ class TestTorchDeviceType(TestCase):
             e_largest, _ = torch.sort(A_eigenvalues[..., -k:], descending=True)
 
             # classical eigenvalue problem, smallest eigenvalues
-            E, V = lobpcg(A, k=k, n=n)
+            E, V = lobpcg(A, k=k, n=n, largest=False)
             self.assertEqual(E, e_smallest)            
             self.assertEqual(mm_A(A, V), mm(V, E.diag_embed()), prec=prec)
 
@@ -13637,7 +13667,7 @@ class TestTorchDeviceType(TestCase):
             self.assertEqual(E, e_largest)
 
             # generalized eigenvalue problem, smallest eigenvalues
-            E, V = lobpcg(A, B=B, k=k, n=n)
+            E, V = lobpcg(A, B=B, k=k, n=n, largest=False)
             self.assertEqual(mm_A(A, V), mm_B(B, mm(V, E.diag_embed())), prec=prec)
 
             # generalized eigenvalue problem, largest eigenvalues
@@ -13660,26 +13690,34 @@ class TestTorchDeviceType(TestCase):
             mm_M = get_matmul(M)
             for drop in [False, True]:
                 Uout = svqb(M, Uin, drop=drop)
-                self.assertEqual(mm(Uout.transpose(-2, -1), mm_M(M, Uout)), torch.eye(Uout.shape[-1], device=device, dtype=dtype))
+                self.assertEqual(mm(Uout.transpose(-2, -1), mm_M(M, Uout)),
+                                 torch.eye(Uout.shape[-1], device=device, dtype=dtype))
 
             nv = max(1, n - 1)
             V = svqb(M, random_matrix(m, nv, device=device), drop=False)
-            self.assertEqual(mm(V.transpose(-2, -1), mm_M(M, V)), torch.eye(V.shape[-1], device=device, dtype=dtype))
+            self.assertEqual(mm(V.transpose(-2, -1), mm_M(M, V)),
+                             torch.eye(V.shape[-1], device=device, dtype=dtype))
 
             # check ortho
             Uin = random_matrix(m, n, device=device)
             U, _ = ortho(M, Uin, V, use_drop=False)
-            self.assertEqual(mm(U.transpose(-2, -1), mm_M(M, U)), torch.eye(U.shape[-1], device=device, dtype=dtype))
-            self.assertEqual(mm(V.transpose(-2, -1), mm_M(M, U)), torch.zeros((V.shape[-1], U.shape[-1]), device=device, dtype=dtype))
+            self.assertEqual(mm(U.transpose(-2, -1), mm_M(M, U)),
+                             torch.eye(U.shape[-1], device=device, dtype=dtype))
+            self.assertEqual(mm(V.transpose(-2, -1), mm_M(M, U)),
+                             torch.zeros((V.shape[-1], U.shape[-1]), device=device, dtype=dtype))
 
             U, _ = ortho(M, Uin, V, use_drop=True)
-            self.assertEqual(mm(U.transpose(-2, -1), mm_M(M, U)), torch.eye(U.shape[-1], device=device, dtype=dtype))
-            self.assertEqual(mm(V.transpose(-2, -1), mm_M(M, U)), torch.zeros((V.shape[-1], U.shape[-1]), device=device, dtype=dtype))
+            self.assertEqual(mm(U.transpose(-2, -1), mm_M(M, U)),
+                             torch.eye(U.shape[-1], device=device, dtype=dtype))
+            self.assertEqual(mm(V.transpose(-2, -1), mm_M(M, U)),
+                             torch.zeros((V.shape[-1], U.shape[-1]), device=device, dtype=dtype))
 
             Uin[:, 0] = V[:, 0]
             U, _ = ortho(M, Uin, V, use_drop=True)
-            self.assertEqual(mm(U.transpose(-2, -1), mm_M(M, U)), torch.eye(U.shape[-1], device=device, dtype=dtype))
-            self.assertEqual(mm(V.transpose(-2, -1), mm_M(M, U)), torch.zeros((V.shape[-1], U.shape[-1]), device=device, dtype=dtype))
+            self.assertEqual(mm(U.transpose(-2, -1), mm_M(M, U)),
+                             torch.eye(U.shape[-1], device=device, dtype=dtype))
+            self.assertEqual(mm(V.transpose(-2, -1), mm_M(M, U)),
+                             torch.zeros((V.shape[-1], U.shape[-1]), device=device, dtype=dtype))
 
             # check get_RR_transform
             A = random_symmetric_pd_matrix(m, device=device, dtype=dtype)

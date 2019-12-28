@@ -6,7 +6,10 @@ import torch
 
 def is_sparse(A):
     """Check if tensor A is a sparse tensor"""
-    return A.layout == torch.sparse_coo
+    if isinstance(A, torch.Tensor):
+        return A.layout == torch.sparse_coo
+    import scipy.sparse
+    return isinstance(A, scipy.sparse.base.spmatrix)
 
 
 def uniform(low=0.0, high=1.0, size=None, dtype=None, device=None):
@@ -44,11 +47,14 @@ def uniform(low=0.0, high=1.0, size=None, dtype=None, device=None):
         return r + 1j * i
     return r
 
+
 def get_floating_dtype(A):
     """Return the floating point dtype of tensor A.
     """
-    index = (0, ) * len(A.shape)
-    return (A.__getitem__(index) * 1.0).dtype
+    if isinstance(A, torch.Tensor):
+        index = (0, ) * len(A.shape)
+        return (A.__getitem__(index) * 1.0).dtype
+    return A.dtype.type
 
 
 def get_matmul(A):
@@ -56,10 +62,22 @@ def get_matmul(A):
     """
     if A is None:  # A is identity
         return lambda A, other: other
-    elif is_sparse(A):
-        return torch.sparse.mm
+    if isinstance(A, torch.Tensor):
+        if is_sparse(A):
+            return torch.sparse.mm
+        else:
+            return torch.matmul
     else:
-        return torch.matmul
+        import numpy
+        import scipy.sparse
+        if isinstance(A, scipy.sparse.coo.coo_matrix):
+            return lambda A, other : A.dot(other)
+        elif isinstance(A, numpy.ndarray):
+            return numpy.dot
+
+    raise NotImplementedError('get_matmul(<{} instance>)'
+                              .format(type(A).__name__))
+
 
 def conjugate(A):
     """Return conjugate of tensor A.

@@ -1313,7 +1313,7 @@ def random_sparse_pd_matrix(matrix_size, density=0.01, **kwargs):
     """Return random sparse positive-definite matrix with given density.
 
     The eigenvalues of the matrix are defined as::
-      arange(1, matrix_size+1)/matrix_size)`
+      arange(1, matrix_size+1)/matrix_size
 
     Algorithm:
       A = diag(arange(1, matrix_size+1)/matrix_size)
@@ -1323,10 +1323,12 @@ def random_sparse_pd_matrix(matrix_size, density=0.01, **kwargs):
           A = R^T A R
     """
     import math
+    torch = kwargs.get('torch', globals()['torch'])
     dtype = kwargs.get('dtype', torch.double)
     device = kwargs.get('device', 'cpu')
     data = dict([((i, i), float(i + 1) / matrix_size)
                  for i in range(matrix_size)])
+
 
     def multiply(data, N, i, j, cs, sn, left=True):
         for k in range(N):

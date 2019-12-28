@@ -7,8 +7,109 @@ import torch
 from .lowrank import get_matmul, get_floating_dtype
 
 
+class NumpyBackend(object):
+    """Implements minimal torch API for numpy arrays.
+    """
+    def __init__(self):
+        import numpy
+        self.numpy = numpy
+        self.float32 = numpy.float32
+        self.float64 = self.double = numpy.float64
+
+    def randn(self, size, dtype=None, device=None):
+        return self.numpy.random.randn(*size).astype(dtype)
+
+    def zeros(self, size, dtype=None, device=None):
+        return self.numpy.zeros(size, dtype=dtype)
+
+    def ones(self, size, dtype=None, device=None):
+        return self.numpy.ones(size, dtype=dtype)
+
+    def eye(self, size, dtype=None, device=None):
+        return self.numpy.eye(size, dtype=dtype)
+
+    def matmul(self, A, B):
+        return get_matmul(A)(A, B)
+
+    def chain_matmul(self, *matrices):
+        if len(matrices) == 1:
+            return matrices[0]
+        elif len(matrices) == 2:
+            A, B = matrices
+        else:
+            A, B = self.chain_matmul(*matrices[:-1]), matrices[-1]
+        return get_matmul(A)(A, B)
+
+    def cholesky(self, A, upper=False):
+        if upper:
+            L = self.numpy.linalg.cholesky(transpose(A))
+            return transpose(L)
+        L = self.numpy.linalg.cholesky(A)
+        return L
+
+    def inverse(self, A):
+        return self.numpy.linalg.inv(A)
+
+    def symeig(self, A, largest=False, eigenvectors=False):
+        assert eigenvectors
+        assert not largest
+        return self.numpy.linalg.eigh(A)
+
+    def diag_embed(self, A):
+        if len(A.shape) == 1:
+            return self.numpy.diag(A)
+        raise NotImplementedError('{}.diag_embed for matrix with shape {}'
+                                  .format(type(self).__name__, A.shape))
+
+    def norm(self, A, dim=None):
+        return self.numpy.linalg.norm(A, axis=dim)
+
+    def numel(self, A):
+        return A.nbytes / A.dtype.itemsize
+
+    def where(self, A):
+        return self.numpy.where(A)
+
+    def qr(self, A, some=False):
+        return self.numpy.linalg.qr(A,
+                                    mode='reduced' if some else 'complete')
+
+    def sparse_coo_tensor(self, indices, values, size, dtype=None, device=None):
+        import scipy.sparse
+        return scipy.sparse.coo_matrix((values, (indices[0], indices[1])), size, dtype=dtype)
+
+    def arange(self, start, stop=None, dtype=None):
+        if stop is None:
+            stop = start
+            start = 0
+        return self.numpy.arange(start, stop, dtype=dtype)
+
+    def sort(self, A, descending=False):
+        if descending:
+            return -self.numpy.sort(-A), NotImplemented
+        return self.numpy.sort(A), NotImplemented
+
+    def flip(self, A, dims=None):
+        if dims == (-1, ):
+            return A[..., ::-1]
+        raise NotImplementedError('{}.flip for dims {}'
+                                  .format(type(self).__name__, dims))
+
+
+numpy_backend = NumpyBackend()
+
+
+def get_backend(A):
+    """Return array backend object that implements torch API for various
+    matrix operations.
+    """
+    if isinstance(A, torch.Tensor):
+        return torch
+    return numpy_backend
+
+
 def lobpcg(A, B=None, k=1, X=None, n=None, iK=None, niter=1000, tol=None,
-           largest=False, tracker=None, method=None, **params):
+           largest=True, tracker=None, method=None, **params):
     """Find the k smallest (or largest) eigenvalues and the corresponding
     eigenvectors of a symmetric positive defined generalized
     eigenvalue problem using matrix-free LOBPCG methods.
@@ -42,7 +143,7 @@ def lobpcg(A, B=None, k=1, X=None, n=None, iK=None, niter=1000, tol=None,
       X (tensor, optional): the input tensor of size :math:`(*, m, n)`
                   where `k <= n <= m`. When specified, it is used as
                   initial approximation of eigenvectors. X must be a
-                  dense tensor and its content will be overwritten.
+                  dense tensor.
 
       iK (tensor, optional): the input tensor of size :math:`(*, m,
                   m)`. When specified, it will be used as preconditioner.
@@ -64,7 +165,7 @@ def lobpcg(A, B=None, k=1, X=None, n=None, iK=None, niter=1000, tol=None,
       largest (bool, optional): when True, solve the eigenproblem for
                  the largest eigenvalues. Otherwise, solve the
                  eigenproblem for smallest eigenvalues. Default is
-                 `False`.
+                 `True`.
 
       method (str, optional): select LOBPCG method. See the
                  description of the function above. Default is
@@ -160,9 +261,10 @@ def lobpcg(A, B=None, k=1, X=None, n=None, iK=None, niter=1000, tol=None,
                                   tol=tol, largest=largest, tracker=tracker,
                                   method=method, **params)
             , 2, (A, B))
+    torch = get_backend(A)
 
     dtype = get_floating_dtype(A)
-    device = A.device
+    device = getattr(A, 'device', None)
     m = A.shape[-1]
     assert A.shape[-2] == m, A.shape  # expecting square matrix
 
@@ -188,16 +290,16 @@ def lobpcg(A, B=None, k=1, X=None, n=None, iK=None, niter=1000, tol=None,
         tol = feps ** 0.5
 
     # Estimate A and B norms
-    X_norm = X.norm()
-    A_norm = get_matmul(A)(A, X).norm() / X_norm
-    B_norm = get_matmul(B)(B, X).norm() / X_norm
+    X_norm = norm(X)
+    A_norm = norm(get_matmul(A)(A, X)) / X_norm
+    B_norm = norm(get_matmul(B)(B, X)) / X_norm
 
     S = torch.zeros(A.shape[:-1] + (3 * n,), dtype=dtype, device=device)
 
     def converged_eigenpairs_count(R, X, E):
         # Use backward stable convergence criterion, see discussion in
         # Sec 4.3 of [DuerschEtal2018]
-        rerr = R.norm(dim=-2) / (X.norm(dim=-2) * (A_norm + E[:X.shape[-1]] * B_norm))
+        rerr = torch.norm(R, dim=-2) / (torch.norm(X, dim=-2) * (A_norm + E[:X.shape[-1]] * B_norm))
         converged = rerr < tol
         count = 0
         for b in converged:
@@ -218,7 +320,7 @@ def lobpcg(A, B=None, k=1, X=None, n=None, iK=None, niter=1000, tol=None,
 
     return {'basic': lobpcg_worker_basic,
             'ortho': lobpcg_worker_ortho}[method](
-                A, B, X, S, m, n, k, iK, niter, tol, largest,
+                torch, A, B, X, S, m, n, k, iK, niter, tol, largest,
                 tracker, converged_eigenpairs_count, **params)
 
 
@@ -272,7 +374,8 @@ def svqb(M, U, tau=1e-6, drop=False):
                    is (m, n1), where `n1 = n` if `drop` is `False,
                    otherwise `n1 <= n`.
     """
-    if U.nelement() == 0:
+    torch = get_backend(U)
+    if torch.numel(U) == 0:
         return U
     mm = torch.matmul
     mm_M = get_matmul(M)
@@ -280,31 +383,35 @@ def svqb(M, U, tau=1e-6, drop=False):
     d = UMU.diagonal(0, -2, -1)
 
     # detect and drop zero columns from U
-    nz = torch.where(d.abs() != 0.0)
+    nz = torch.where(abs(d) != 0.0)
     if len(nz[0]) < len(d):
         return svqb(M, U[(Ellipsis,) + nz], tau=tau, drop=drop)
 
-    D = (d ** -0.5).diag_embed()
+    D = torch.diag_embed(d ** -0.5)
     DUMUD = qform(UMU, D)
-    E, Z = torch.symeig(DUMUD, eigenvectors=True)
-    t = tau * E.abs().max()
+    E, Z = symeig(DUMUD, eigenvectors=True)
+    t = tau * abs(E).max()
     if drop:
         keep = (Ellipsis,) + torch.where(E > t)
         E = E[keep]
         Z = Z[keep]
     else:
         E[torch.where(E < t)] = t
-    return torch.chain_matmul(U, D, Z, (E ** -0.5).diag_embed())
+    return torch.chain_matmul(U, D, Z, torch.diag_embed(E ** -0.5))
 
 
 def norm(A):
     """Return Frobenius norm of a real matrix.
     """
-    try:
-        return A.norm(dim=(-2, -1), p='fro')
-    except RuntimeError:
-        # e.g. conj is not available in CUDA
-        return get_matmul(A)(A.transpose(-2, -1), A).trace() ** 0.5
+    if isinstance(A, torch.Tensor):
+        try:
+            return A.norm(dim=(-2, -1), p='fro')
+        except RuntimeError:
+            # e.g. conj is not available in CUDA
+            return get_matmul(A)(transpose(A), A).trace() ** 0.5
+    else:
+        import numpy
+        return numpy.linalg.norm(A, ord='fro')
 
 
 def ortho(M, U, V, tau_ortho=1e-6, tau_drop=1e-6, tau_replace=1e-6,
@@ -339,11 +446,12 @@ def ortho(M, U, V, tau_ortho=1e-6, tau_drop=1e-6, tau_replace=1e-6,
 
       stats (dict) : statistics information
     """
+    torch = get_backend(U)
     mm = torch.matmul
     mm_M = get_matmul(M)
     MV_norm = norm(mm_M(M, V))
     MU = mm_M(M, U)
-    VMU = mm(V.transpose(-2, -1), MU)
+    VMU = mm(transpose(V), MU)
     i = j = 0
     i_max = params.get('ortho.i_max', 3)
     j_max = params.get('ortho.j_max', 3)
@@ -360,22 +468,24 @@ def ortho(M, U, V, tau_ortho=1e-6, tau_drop=1e-6, tau_replace=1e-6,
                 tau_svqb = tau_replace
             else:
                 U = svqb(M, U, drop=False, tau=tau_replace)
-            if U.nelement() == 0:
+            if torch.numel(U) == 0:
                 # all initial U columns are M-collinear to V
                 stats['ortho.i'] = i
                 stats['ortho.j'] = j
                 return U, stats
             MU = mm_M(M, U)
-            UMU = mm(U.transpose(-2, -1), MU)
+            UMU = mm(transpose(U), MU)
             U_norm = norm(U)
             MU_norm = norm(MU)
-            R = UMU - torch.eye(UMU.shape[-1], device=UMU.device, dtype=UMU.dtype)
+            R = UMU - torch.eye(UMU.shape[-1],
+                                device=getattr(UMU, 'device', None),
+                                dtype=UMU.dtype)
             R_norm = norm(R)
             rerr = R_norm / (MU_norm * U_norm)
             if rerr < tau_ortho:
                 stats['ortho.UMUmI_rerr'][i, j] = rerr
                 break
-        VMU = mm(V.transpose(-2, -1), MU)
+        VMU = mm(transpose(V), MU)
         VMU_norm = norm(VMU)
         rerr = VMU_norm / (MV_norm * U_norm)
         if rerr < tau_ortho:
@@ -406,26 +516,31 @@ def get_RR_transform(B, S):
     Returns:
       Ri (tensor): upper-triangular transformation matrix of size
                    :math:`(n, n)`.
-      R_cond (float) : condition number of the Cholesky factorization
     """
+    torch = get_backend(S)
     mm = torch.matmul
     SBS = qform(B, S)
     d = SBS.diagonal(0, -2, -1) ** -0.5
     d = d.reshape(d.shape + (1,))
-    dd = mm(d, d.transpose(-2, -1))
-    d_ = mm(d, torch.ones(d.shape, device=d.device, dtype=d.dtype).transpose(-2, -1))
+    dd = mm(d, transpose(d))
+    d_ = mm(d, transpose(torch.ones(d.shape,
+                                    device=getattr(d, 'device', None),
+                                    dtype=d.dtype)))
     R = torch.cholesky(dd * SBS, upper=True)
     # TODO: use LAPACK ?trtri as R is upper-triangular
-    Rinv = R.inverse()
-    R_diag = R.diagonal
-    R_cond = R
+    Rinv = torch.inverse(R)
     return Rinv * d_
+
+
+def transpose(A):
+    ndim = len(A.shape)
+    return A.transpose(ndim - 1, ndim - 2)
 
 
 def bform(X, A, Y):
     """Return bilinear form of matrices: :math:`X^T A Y`.
     """
-    return torch.matmul(X.transpose(-2, -1), get_matmul(A)(A, Y))
+    return get_matmul(X)(transpose(X), get_matmul(A)(A, Y))
 
 
 def qform(A, S):
@@ -437,39 +552,42 @@ def qform(A, S):
 def residual(A, B, X, E):
     """Return residual :math:`A X - B X diag(E)`.
     """
+    torch = get_backend(A)
     n = X.shape[-1]
-    return get_matmul(A)(A, X) - torch.matmul(get_matmul(B)(B, X), E[:n].diag_embed())
+    return get_matmul(A)(A, X) - torch.matmul(get_matmul(B)(B, X), torch.diag_embed(E[:n]))
 
 
 def basis(A):
     """Return orthogonal basis of A columns.
     """
+    torch = get_backend(A)
     try:
         Q = torch.orgqr(*torch.geqrf(A))
-    except RuntimeError:
+    except (RuntimeError, AttributeError):
         # torch.orgqr is not available in CUDA
         Q, _ = torch.qr(A, some=True)
     return Q
 
 
-def symeig(A, largest=False):
+def symeig(A, largest=False, eigenvectors=True):
     """Return eigenpairs of A with specified ordering.
     """
-    E, Z = torch.symeig(A, eigenvectors=True)
+    torch = get_backend(A)
+    E, Z = torch.symeig(A, eigenvectors=eigenvectors)
     # assuming that E is ordered
     if largest:
-        E = E.flip(-1)
-        Z = Z.flip(-1)
+        E = torch.flip(E, dims=(-1,))
+        Z = torch.flip(Z, dims=(-1,))
     return E, Z
 
 
-def lobpcg_worker_basic(A, B, X, S, m, n, k, iK, niter, tol, largest, tracker,
-                        converged_count, **params):
+def lobpcg_worker_basic(torch, A, B, X, S, m, n, k, iK, niter, tol, largest,
+                        tracker, converged_count, **params):
     mm = torch.matmul
 
     # Rayleigh-Ritz procedure, initialize
     Ri = get_RR_transform(B, X)
-    R_diag_abs = Ri.diagonal(0, -2, -1).abs()
+    R_diag_abs = abs(Ri.diagonal(0, -2, -1))
     R_cond = R_diag_abs.max() / R_diag_abs.min()
 
     M = qform(qform(A, X), Ri)
@@ -496,7 +614,7 @@ def lobpcg_worker_basic(A, B, X, S, m, n, k, iK, niter, tol, largest, tracker,
 
         # Rayleigh-Ritz procedure
         Ri = get_RR_transform(B, S_)
-        R_diag_abs = Ri.diagonal(0, -2, -1).abs()
+        R_diag_abs = abs(Ri.diagonal(0, -2, -1))
         R_cond = R_diag_abs.max() / R_diag_abs.min()
 
         tracker_args['R_cond'] = R_cond
@@ -532,8 +650,8 @@ def lobpcg_worker_basic(A, B, X, S, m, n, k, iK, niter, tol, largest, tracker,
     return E[:k], X[:, :k]
 
 
-def lobpcg_worker_ortho(A, B, X, S, m, n, k, iK, niter, tol, largest, tracker,
-                        converged_count, **params):
+def lobpcg_worker_ortho(torch, A, B, X, S, m, n, k, iK, niter, tol, largest,
+                        tracker, converged_count, **params):
     mm = torch.chain_matmul
 
     params['tol_ortho'] = params.get('tol_ortho', tol)
@@ -574,7 +692,7 @@ def lobpcg_worker_ortho(A, B, X, S, m, n, k, iK, niter, tol, largest, tracker,
         # Update E, X, P
         X[:, nc:] = mm(S_, Z[:, :n - nc])
         E[nc:] = E_[:n - nc]
-        P = mm(S_, Z[:, n - nc:], basis(Z[:n - nc, n - nc:].transpose(-2, -1)))
+        P = mm(S_, Z[:, n - nc:], basis(transpose(Z[:n - nc, n - nc:])))
         np = P.shape[-1]
 
         # check convergence
