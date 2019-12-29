@@ -520,8 +520,11 @@ def get_RR_transform(B, S):
     torch = get_backend(S)
     mm = torch.matmul
     SBS = qform(B, S)
-    d = SBS.diagonal(0, -2, -1) ** -0.5
-    d = d.reshape(d.shape + (1,))
+    d1 = SBS.diagonal(0, -2, -1) ** -0.5
+    d = torch.zeros(d1.shape + (1, ),
+                    device=getattr(d1, 'device', None),
+                    dtype=d1.dtype)
+    d[:, 0] = d1
     dd = mm(d, transpose(d))
     d_ = mm(d, transpose(torch.ones(d.shape,
                                     device=getattr(d, 'device', None),
