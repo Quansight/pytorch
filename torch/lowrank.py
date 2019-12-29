@@ -181,6 +181,12 @@ def svd(A, q=6, niter=2, M=None):
 
     .. note:: The input is assumed to be a low-rank matrix.
 
+    .. note:: In general, use the full-rank SVD implementation
+              ``torch.svd`` for dense matrices due to its 10-fold
+              higher performance characteristics. The low-rank SVD
+              will be useful for huge sparse matrices that
+              ``torch.svd`` cannot handle.
+
     Arguments::
         A (Tensor): the input tensor of size :math:`(*, m, n)`
 
