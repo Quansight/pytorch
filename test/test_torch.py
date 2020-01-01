@@ -13635,7 +13635,7 @@ class TestTorchDeviceType(TestCase):
                 # generalized eigenvalue problem, largest eigenvalues
                 E, V = lobpcg(A, B=B, k=k, n=n, largest=True)
                 self.assertEqual(mm_A(A, V) / E.max(), mm(mm_B(B, V), (E / E.max()).diag_embed()),
-                                 prec=prec * 15)
+                                 prec=prec * 20)
 
         # check sparse input
         for m, n, k, density in [
