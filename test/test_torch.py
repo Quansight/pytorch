@@ -9216,8 +9216,8 @@ class TestTorchDeviceType(TestCase):
 
         # sparse input
         for guess_rank, size in [
-                (4, (17, 4)), (4, (4, 17)), (6, (17, 17)),
-                (12, (100, 40)), (12, (40, 100)), (300, (1000, 1000))]:
+                (4, (17, 4)), (4, (4, 17)), (16, (17, 17)),
+                (21, (100, 40)), (20, (40, 100)), (600, (1000, 1000))]:
             for density in [0.005, 0.1]:
                 run_subtest(guess_rank, None, size, (), device, density=density)
 

@@ -1304,7 +1304,7 @@ def random_sparse_matrix(rows, columns, density=0.01, **kwargs):
     indices = [row_indices, column_indices]
     values = torch.randn(nonzero_elements, dtype=dtype, device=device)
     # ensure that the diagonal dominates
-    values *= torch.tensor([-(i - j)**4 for i, j in zip(*indices)], dtype=dtype, device=device).exp()
+    values *= torch.tensor([-float(i - j)**2 for i, j in zip(*indices)], dtype=dtype, device=device).exp()
     A = torch.sparse_coo_tensor(indices, values, (rows, columns), device=device)
     return A.coalesce()
 
