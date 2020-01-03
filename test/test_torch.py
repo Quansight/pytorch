@@ -13590,9 +13590,9 @@ class TestTorchDeviceType(TestCase):
             kwargs['tracker'] = test_tracker
             kwargs['niter'] = 1000
             kwargs['method'] = method
-            kwargs['tol'] = 1e-4
+            kwargs['tol'] = 1e-8
             return orig_lobpcg(*args, **kwargs)
-        prec = 5e-2
+        prec = 5e-4
 
         # check dense input
         mm = torch.matmul
@@ -13635,7 +13635,7 @@ class TestTorchDeviceType(TestCase):
                 # generalized eigenvalue problem, largest eigenvalues
                 E, V = lobpcg(A, B=B, k=k, n=n, largest=True)
                 self.assertEqual(mm_A(A, V) / E.max(), mm(mm_B(B, V), (E / E.max()).diag_embed()),
-                                 prec=prec * 20)
+                                 prec=prec)
 
         # check sparse input
         for m, n, k, density in [
