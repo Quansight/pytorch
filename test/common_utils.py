@@ -1443,3 +1443,15 @@ def load_tests(loader, tests, pattern):
             check_test_defined_in_running_script(test)
             test_suite.addTest(test)
     return test_suite
+
+
+def scanseed(mth):
+    """Run test method with different seeds.
+    """
+    def wrapper(self, *args, **kwargs):
+        for i in range(1000):
+            print("Seed", str(i))
+            torch.manual_seed(i)
+            mth(self, *args, **kwargs)
+
+    return wrapper

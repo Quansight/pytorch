@@ -33,7 +33,7 @@ from common_utils import TestCase, iter_indices, TEST_NUMPY, TEST_SCIPY, TEST_MK
     TEST_LIBROSA, TEST_WITH_ROCM, run_tests, download_file, skipIfNoLapack, suppress_warnings, \
     IS_WINDOWS, PY3, NO_MULTIPROCESSING_SPAWN, do_test_dtypes, do_test_empty_full, \
     IS_SANDCASTLE, load_tests, brute_pdist, brute_cdist, slowTest, \
-    skipCUDANonDefaultStreamIf, skipCUDAMemoryLeakCheckIf
+    skipCUDANonDefaultStreamIf, skipCUDAMemoryLeakCheckIf, scanseed
 from multiprocessing.reduction import ForkingPickler
 from common_device_type import instantiate_device_type_tests, PYTORCH_CUDA_MEMCHECK, \
     skipCPUIfNoLapack, skipCUDAIfNoMagma, skipCUDAIfRocm, onlyCUDA, onlyCPU, \
@@ -7355,6 +7355,7 @@ class TestTorchDeviceType(TestCase):
     @skipCUDAIfNoMagma
     @skipCPUIfNoLapack
     @dtypes(torch.double)
+    @scanseed
     def test_det_logdet_slogdet_batched(self, device, dtype):
         from common_utils import (random_symmetric_matrix, random_symmetric_psd_matrix,
                                   random_symmetric_pd_matrix, random_square_matrix_of_rank)
