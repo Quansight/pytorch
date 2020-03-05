@@ -123,7 +123,7 @@ class DiagonalTensor(object):
     def tensor(self):
         return self._i * torch.eye(self._N)
 
-    def __torch_function__(self, func, args=(), kwargs=None):
+    def __torch_function__(self, func, types, args=(), kwargs=None):
         if kwargs is None:
             kwargs = {}
         if func not in self.handled_functions:
@@ -198,7 +198,7 @@ class SubTensor(torch.Tensor):
     This is useful for testing that the semantics for overriding torch
     functions are working correctly.
     """
-    def __torch_function__(self, func, args=(), kwargs=None):
+    def __torch_function__(self, func, types, args=(), kwargs=None):
         if(kwargs is None):
             kwargs = {}
 
@@ -914,8 +914,9 @@ class TensorLike(object):
     This class is used to explicitly test that the full torch.tensor API
     can be overriden with a class that defines __torch_function__.
     """
-    def __torch_function__(self, func, args=(), kwargs=None):
-        if(kwargs is None):
+    def __torch_function__(self, func, types, args=(), kwargs=None):
+        print(func.__name__, types, args, kwargs)
+        if kwargs is None:
             kwargs = {}
 
         if func not in HANDLED_FUNCTIONS_TENSOR_LIKE:
