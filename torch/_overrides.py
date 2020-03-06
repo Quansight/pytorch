@@ -14,6 +14,23 @@ https://www.numpy.org/neps/nep-0018-array-function-protocol.html
 )
 
 """
+import functools
+
+
+def torch_function_dispatch(dispatcher):
+    def decorator(func):
+        @functools.wraps(func)
+        def inner(*args, **kwargs):
+            return handle_torch_function(
+                inner,
+                dispatcher(*args, **kwargs),
+                *args,
+                **kwargs,
+            )
+        
+        inner._implementation = func        
+        return inner
+    return decorator
 
 
 def _get_overloaded_args(relevant_args):
