@@ -382,9 +382,9 @@ using BinaryElementwiseOp = BinaryElementwiseWithArgsOp<
 // functor with default constructor, e.g. that does not need to take into
 // consideration any arguments during operator creation.
 template <
-    typename InputTypes,
-    class Context,
-    class Functor,
+    typename InputTypes, // == NumericTypes
+    class Context, // == CPUContext
+    class Functor, // == MulFunctor<CPUContext>
     class OutputTypeMap = SameTypeAsInput,
     class GradientTypeMap = SameTypeAsInput>
 using BinaryElementwiseGradientOp = BinaryElementwiseWithArgsGradientOp<
