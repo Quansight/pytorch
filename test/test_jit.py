@@ -16828,6 +16828,20 @@ class TestProducerVersion(TestCase):
         self.assertEqual(onnx_model.producer_version, torch.__version__[:3])
 
 
+class TestProducerVersion(TestCase):
+
+    def test_version(self):
+        # issue gh-
+        class MyModule(Module):
+            def forward(self, x):
+                return torch.isnan(x)
+
+        x = torch.tensor([1.0, float('nan'), 2.0])
+
+        f = io.BytesIO()
+        torch.onnx.export(MyModule(), x, f, export_params=True)
+        onnx_model = onnx.load(io.BytesIO(f.getvalue()))
+        self.assertEqual(onnx_model.producer_version, torch.__version__[:3])
 
 
 for test in autograd_method_tests():
