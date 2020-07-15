@@ -3313,6 +3313,17 @@
   python_module: nn
   device_guard: False
 
+- func: _sparse_hardshrink(Tensor self, Scalar lambd=0.5) -> Tensor
+  use_c10_dispatcher: full
+  dispatch:
+    SparseCPU: sparse_hardshrink_cpu
+    SparseCUDA: sparse_hardshrink_cuda
+
+- func: _sparse_hardshrink_backward(Tensor grad_out, Tensor self, Scalar lambd) -> Tensor
+  dispatch:
+    SparseCPU: sparse_hardshrink_backward_cpu
+    SparseCUDA: sparse_hardshrink_backward_cuda
+
 - func: hardshrink(Tensor self, Scalar lambd=0.5) -> Tensor
   variants: function, method
   dispatch:
