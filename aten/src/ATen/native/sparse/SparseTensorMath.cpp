@@ -149,6 +149,35 @@ SparseTensor pow_sparse_scalar(const SparseTensor& t, Scalar value) {
 }
 
 // --------------------------------------------------------------------
+// acos(SparseTensor)
+// --------------------------------------------------------------------
+
+// In-place acos on uncoalesced tensors is not supported due non-linear type of the operation.
+// Values of uncoalesced tensor corresponding to the same indices are summed
+// and acos(summed_value) != acos(v1) + acos(v2)
+
+SparseTensor& acos_out_sparse(SparseTensor& r, const SparseTensor& t) {
+  AT_ASSERT(r.is_sparse());
+  AT_ASSERT(t.is_sparse());
+
+  if (is_same_tensor(r, t)) {
+    // don't have in-place acos for uncoalesced input because coalesce() is not in-place, see above comment
+    TORCH_CHECK(r.is_coalesced(), "acos: in-place on uncoalesced tensors is not supported");
+  }
+  else {
+    copy_sparse_to_sparse_(r, t.coalesce());
+  }
+  r._values().acos_();
+  return r;
+}
+
+SparseTensor& acos_sparse_(SparseTensor& t) {
+  TORCH_CHECK(t.is_coalesced(), "acos: in-place on uncoalesced tensors is not supported");
+  return acos_out_sparse(t, t);
+}
+
+
+// --------------------------------------------------------------------
 // div(SparseTensor, Scalar)
 // --------------------------------------------------------------------
 

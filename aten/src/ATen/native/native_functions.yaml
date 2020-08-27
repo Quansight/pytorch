@@ -295,8 +295,14 @@
 - func: acos_(Tensor(a!) self) -> Tensor(a!)
   use_c10_dispatcher: full
   variants: function, method
+  dispatch:
+    CPU, CUDA: acos_
+    SparseCPU, SparseCUDA: acos_sparse_
 
 - func: acos.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)
+  dispatch:
+    CPU, CUDA: acos_out
+    SparseCPU, SparseCUDA: acos_out_sparse
 
 # arccos, alias of acos
 - func: arccos(Tensor self) -> Tensor
