@@ -93,6 +93,24 @@ extern "C" void zgetrs_(char *trans, int *n, int *nrhs, std::complex<double> *a,
 extern "C" void cgetrs_(char *trans, int *n, int *nrhs, std::complex<float> *a, int *lda, int *ipiv, std::complex<float> *b, int *ldb, int *info);
 extern "C" void dgetrs_(char *trans, int *n, int *nrhs, double *a, int *lda, int *ipiv, double *b, int *ldb, int *info);
 extern "C" void sgetrs_(char *trans, int *n, int *nrhs, float *a, int *lda, int *ipiv, float *b, int *ldb, int *info);
+
+// gees
+typedef int (*LAPACK_Z_SELECT1) (const std::complex<double>*);
+typedef int (*LAPACK_C_SELECT1) (const std::complex<float>*);
+typedef int (*LAPACK_D_SELECT2) (const double*, const double*);
+typedef int (*LAPACK_S_SELECT2) (const float*, const float*);
+extern "C" void zgees_(char *jobvs, char *sort, LAPACK_Z_SELECT1 select, int *n,
+    std::complex<double> *a, int *lda, int *sdim, std::complex<double> *w, std::complex<double> *vs, int *ldvs,
+    std::complex<double> *work, int *lwork, double *rwork, int *bwork, int *info);
+extern "C" void cgees_(char *jobvs, char *sort, LAPACK_C_SELECT1 select, int *n,
+    std::complex<float> *a, int *lda, int *sdim, std::complex<float> *w, std::complex<float> *vs, int *ldvs,
+    std::complex<float> *work, int *lwork, float *rwork, int *bwork, int *info);
+extern "C" void dgees_(char *jobvs, char *sort, LAPACK_D_SELECT2 select, int *n,
+    double *a, int *lda, int *sdim, double *wr, double *wi, double *vs, int *ldvs,
+    double *work, int *lwork, int *bwork, int *info);
+extern "C" void sgees_(char *jobvs, char *sort, LAPACK_S_SELECT2 select, int *n,
+    float *a, int *lda, int *sdim, float *wr, float *wi, float *vs, int *ldvs,
+    float *work, int *lwork, int *bwork, int *info);
 #endif
 
 namespace at {
@@ -137,6 +155,11 @@ void lapackSvd(char jobz, int m, int n, scalar_t *a, int lda,
 
 template<class scalar_t>
 void lapackLuSolve(char trans, int n, int nrhs, scalar_t *a, int lda, int *ipiv, scalar_t *b, int ldb, int *info);
+
+template<class scalar_t>
+void lapackGees(char jobvs, char sort, const std::string& select, int n,
+    scalar_t *a, int lda, int *sdim, scalar_t *wr, scalar_t *wi, scalar_t *vs, int ldvs,
+    scalar_t *work, int lwork, typename c10::scalar_value_type<scalar_t>::type *rwork, int bwork, int *info);
 
 
 template<> void lapackSolve<c10::complex<double>>(int n, int nrhs, c10::complex<double> *a, int lda, int *ipiv, c10::complex<double> *b, int ldb, int *info) {
@@ -341,6 +364,48 @@ template<> void lapackLuSolve<double>(char trans, int n, int nrhs, double *a, in
 
 template<> void lapackLuSolve<float>(char trans, int n, int nrhs, float *a, int lda, int *ipiv, float *b, int ldb, int *info) {
   sgetrs_(&trans, &n, &nrhs, a, &lda, ipiv, b, &ldb, info);
+}
+
+template<> void lapackGees<double>(char jobvs, char sort, const std::string& select, int n,
+    double *a, int lda, int *sdim, double *wr, double *wi,
+    double *vs, int ldvs, double *work, int lwork, double *rwork, int bwork, int *info) {
+  sort = 'N';
+  dgees_(&jobvs, &sort, /*select=*/nullptr, &n,
+      a, &lda, sdim, wr, wi, vs, &ldvs,
+      work, &lwork, &bwork, info);
+}
+
+template<> void lapackGees<float>(char jobvs, char sort, const std::string& select, int n,
+    float *a, int lda, int *sdim, float *wr, float *wi,
+    float *vs, int ldvs, float *work, int lwork, float *rwork, int bwork, int *info) {
+  sort = 'N';
+  sgees_(&jobvs, &sort, /*select=*/nullptr, &n,
+      a, &lda, sdim, wr, wi, vs, &ldvs,
+      work, &lwork, &bwork, info);
+}
+
+template<> void lapackGees<c10::complex<double>>(char jobvs, char sort, const std::string& select, int n,
+    c10::complex<double> *a, int lda, int *sdim, c10::complex<double> *wr, c10::complex<double> *wi,
+    c10::complex<double> *vs, int ldvs, c10::complex<double> *work, int lwork, double *rwork, int bwork, int *info) {
+  sort = 'N';
+  zgees_(&jobvs, &sort, /*select=*/nullptr, &n,
+      reinterpret_cast<std::complex<double>*>(a), &lda, sdim,
+      /*w=*/reinterpret_cast<std::complex<double>*>(wr),
+      reinterpret_cast<std::complex<double>*>(vs), &ldvs,
+      reinterpret_cast<std::complex<double>*>(work), &lwork,
+      rwork, &bwork, info);
+}
+
+template<> void lapackGees<c10::complex<float>>(char jobvs, char sort, const std::string& select, int n,
+    c10::complex<float> *a, int lda, int *sdim, c10::complex<float> *wr, c10::complex<float> *wi,
+    c10::complex<float> *vs, int ldvs, c10::complex<float> *work, int lwork, float *rwork, int bwork, int *info) {
+  sort = 'N';
+  cgees_(&jobvs, &sort, /*select=*/nullptr, &n,
+      reinterpret_cast<std::complex<float>*>(a), &lda, sdim,
+      /*w=*/reinterpret_cast<std::complex<float>*>(wr),
+      reinterpret_cast<std::complex<float>*>(vs), &ldvs,
+      reinterpret_cast<std::complex<float>*>(work), &lwork,
+      rwork, &bwork, info);
 }
 #endif
 
