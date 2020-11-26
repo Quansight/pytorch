@@ -6255,6 +6255,18 @@
     CPU: _svd_helper_cpu
     CUDA: _svd_helper_cuda
 
+- func: schur(Tensor self) -> (Tensor U, Tensor S)
+  use_c10_dispatcher: full
+  variants: method, function
+  dispatch:
+    CPU: schur_cpu
+
+- func: _schur_helper(Tensor self) -> (Tensor, Tensor)
+  use_c10_dispatcher: full
+  variants: function
+  dispatch:
+    CPU: _schur_helper_cpu
+
 # swapaxes, alias for transpose
 - func: swapaxes(Tensor(a) self, int axis0, int axis1) -> Tensor(a)
   use_c10_dispatcher: full

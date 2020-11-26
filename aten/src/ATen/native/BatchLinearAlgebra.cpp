@@ -1335,6 +1335,100 @@ std::tuple<Tensor&, Tensor&, Tensor&> svd_out(Tensor& U, Tensor& S, Tensor& VT,
   return std::tuple<Tensor&, Tensor&, Tensor&>(U, S, VT);
 }
 
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ schur ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+template <typename scalar_t>
+static void apply_schur(Tensor& self, Tensor& schur_vectors,
+    std::vector<int64_t>& infos) {
+#ifndef USE_LAPACK
+  AT_ERROR("schur: LAPACK library not found in compilation");
+#else
+  //using value_t = typename c10::scalar_value_type<scalar_t>::type;
+  //auto self_data = self.data_ptr<scalar_t>();
+  //auto U_data = U.data_ptr<scalar_t>();
+  //auto S_data = S.data_ptr<value_t>();
+  //auto VT_data = VT.data_ptr<scalar_t>();
+  //auto self_stride = matrixStride(self);
+  //auto U_stride = matrixStride(U);
+  //auto S_stride = S.size(-1);
+  //auto VT_stride = matrixStride(VT);
+  //auto batchsize = batchCount(self);
+
+  //int info;
+  //auto m = self.size(-2);
+  //auto n = self.size(-1);
+  //auto mn = std::min(m, n);
+  //Tensor iwork = at::empty({8 * mn}, at::kInt);
+  //auto iwork_data = iwork.data_ptr<int>();
+  //Tensor rwork;
+  //value_t* rwork_data = nullptr;
+  //if (isComplexType(at::typeMetaToScalarType(self.dtype()))) {
+  //  auto lrwork  = computeLRWorkDim(jobz, m, n);
+  //  // rwork is an array of floats or doubles depending on the type
+  //  rwork = at::empty({std::max(int64_t(1), lrwork)}, at::typeMetaToScalarType(S.dtype()));
+  //  rwork_data = rwork.data_ptr<value_t>();
+  //}
+
+  //// Run once, first to get the optimum work size.
+  //// Since we deal with batches of matrices with the same dimensions, doing this outside
+  //// the loop saves (batch_size - 1) workspace queries which would provide the same result
+  //// and (batch_size - 1) calls to allocate and deallocate workspace using at::empty()
+  //int lwork = -1;
+  //scalar_t wkopt;
+  //lapackSvd<scalar_t, value_t>(jobz, m, n, self_data, m, S_data, U_data, m, VT_data, n, &wkopt, lwork, rwork_data, iwork_data, &info);
+  //lwork = static_cast<int>(real_impl<scalar_t, value_t>(wkopt));
+  //Tensor work = at::empty({lwork}, self.options());
+  //auto work_data = work.data_ptr<scalar_t>();
+
+  //for (int64_t i = 0; i < batchsize; i++) {
+  //  scalar_t* self_working_ptr = &self_data[i * self_stride];
+  //  value_t* S_working_ptr = &S_data[i * S_stride];
+  //  scalar_t* U_working_ptr = &U_data[i * U_stride];
+  //  scalar_t* VT_working_ptr = &VT_data[i * VT_stride];
+
+  //  // Compute S, U (optionally) and VT (optionally)
+  //  lapackSvd<scalar_t, value_t>(jobz, m, n, self_working_ptr, m,
+  //                      S_working_ptr, U_working_ptr, m, VT_working_ptr, n, work_data, lwork, rwork_data, iwork_data, &info);
+  //  infos[i] = info;
+  //  if (info != 0) {
+  //    return;
+  //  }
+  //}
+#endif
+}
+
+std::tuple<Tensor, Tensor> _schur_helper_cpu(const Tensor& self) {
+  std::vector<int64_t> infos(batchCount(self), 0);
+
+  Tensor schur_form;
+  Tensor schur_vectors;
+  if (self.numel() > 0) {
+    schur_form = cloneBatchedColumnMajor(self);
+    schur_vectors = at::empty_like(schur_form);
+
+    AT_DISPATCH_FLOATING_AND_COMPLEX_TYPES(self.scalar_type(), "schur_cpu", [&]{
+      apply_schur<scalar_t>(schur_form, schur_vectors, infos);
+    });
+
+    if (self.dim() > 2) {
+      batchCheckErrors(infos, "schur_cpu");
+    } else {
+      singleCheckErrors(infos[0], "schur_cpu");
+    }
+  }
+  else {
+    schur_form = at::empty_like(self, LEGACY_CONTIGUOUS_MEMORY_FORMAT);
+    schur_vectors = at::empty_like(self, LEGACY_CONTIGUOUS_MEMORY_FORMAT);
+  }
+
+  return std::tie(schur_form, schur_vectors);
+}
+
+std::tuple<Tensor, Tensor> schur_cpu(const Tensor& self) {
+  squareCheckInputs(self);
+  return at::_schur_helper(self);
+}
+
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ lu_solve ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 template<typename scalar_t>
