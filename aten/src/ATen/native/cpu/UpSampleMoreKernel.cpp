@@ -180,6 +180,161 @@ void cpu_upsample_linear(
 }
 
 template <typename scalar_t, typename scale_type>
+void cpu_upsample_linear_integral(
+    Tensor& output_,
+    const Tensor& input_,
+    bool align_corners,
+    const scale_type& scales) {
+  TORCH_CHECK(input_.dtype() == output_.dtype(), "expected dtype ", input_.dtype(),
+              " for `output` but got dtype ", output_.dtype());
+
+  auto input = input_.contiguous();
+  auto output = output_.contiguous();
+
+  auto input_data = input.data_ptr<scalar_t>();
+  auto output_data = output.data_ptr<scalar_t>();
+  auto input_sizes = input.sizes().vec();
+  auto output_sizes = output.sizes().vec();
+  auto ndim = input_sizes.size();
+  auto numel = output.numel();
+
+  // treat nbatch and channels as one dimension
+  int64_t channels = input_sizes[0] * input_sizes[1];
+  int64_t input_depth = (ndim == 5) ? input_sizes[2] : 1;
+  int64_t output_depth = (ndim == 5) ? output_sizes[2] : 1;
+  int64_t input_height = (ndim >= 4) ? input_sizes[ndim - 2] : 1;
+  int64_t output_height = (ndim >= 4) ? output_sizes[ndim - 2] : 1;
+  int64_t input_width = input_sizes[ndim - 1];
+  int64_t output_width = output_sizes[ndim - 1];
+
+  int64_t output_slice_size = output_depth * output_height * output_width;
+
+  auto loop1d = [&](int64_t begin, int64_t end) {
+    const float width_scale = area_pixel_compute_scale<float>(
+        input_width, output_width, align_corners, scales[0]);
+
+    auto input_indexr = [=](int64_t c, int64_t w) {
+      return input_data[c * input_width + w];
+    };
+
+    int64_t iw0, iw1;
+    float w0lambda, w1lambda;
+    for (int64_t c = begin; c < end; c++) {
+      for (int64_t ow = 0; ow < output_width; ow++) {
+        compute_source_index_and_lambda(
+            iw0, iw1, w0lambda, w1lambda, width_scale, ow, input_width, output_width, align_corners);
+        int64_t output_offset = c * output_slice_size + ow;
+        float output_value_f32 =
+            w0lambda * input_indexr(c, iw0) + /* w0 * i0 */
+            w1lambda * input_indexr(c, iw1);  /* w1 * i1 */
+        
+        // Clamp to scalar_t min/max
+        auto lmin = std::numeric_limits<scalar_t>::min();
+        auto lmax = std::numeric_limits<scalar_t>::max();
+        output_data[output_offset] = static_cast<scalar_t>(
+            output_value_f32 < lmin ? lmin : output_value_f32 > lmax ? lmax : output_value_f32);
+      }
+    }
+  };
+
+  auto loop2d = [&](int64_t begin, int64_t end) {
+    const float height_scale = area_pixel_compute_scale<scalar_t>(
+        input_height, output_height, align_corners, scales[0]);
+    const float width_scale = area_pixel_compute_scale<scalar_t>(
+        input_width, output_width, align_corners, scales[1]);
+
+    auto input_indexr = [=](int64_t c, int64_t h, int64_t w) {
+      return input_data[c * input_height * input_width + h * input_width + w];
+    };
+
+    int64_t ih0, ih1, iw0, iw1;
+    float h0lambda, h1lambda, w0lambda, w1lambda;
+    for (int64_t c = begin; c < end; c++) {
+      for (int64_t oh = 0; oh < output_height; oh++) {
+        compute_source_index_and_lambda(
+            ih0, ih1, h0lambda, h1lambda, height_scale, oh, input_height, output_height, align_corners);
+        for (int64_t ow = 0; ow < output_width; ow++) {
+          compute_source_index_and_lambda(
+              iw0, iw1, w0lambda, w1lambda, width_scale, ow, input_width, output_width, align_corners);
+          int64_t output_offset = c * output_slice_size + oh * output_width + ow;
+          float output_value_f32 =       
+              h0lambda * w0lambda * input_indexr(c, ih0, iw0) + /* h0 * w0 * i00 */
+              h0lambda * w1lambda * input_indexr(c, ih0, iw1) + /* h0 * w1 * i01 */
+              h1lambda * w0lambda * input_indexr(c, ih1, iw0) + /* h1 * w0 * i10 */
+              h1lambda * w1lambda * input_indexr(c, ih1, iw1);  /* h1 * w1 * i11 */
+
+          // Clamp to scalar_t min/max
+          auto lmin = std::numeric_limits<scalar_t>::min();
+          auto lmax = std::numeric_limits<scalar_t>::max();
+          output_data[output_offset] = static_cast<scalar_t>(
+              output_value_f32 < lmin ? lmin : output_value_f32 > lmax ? lmax : output_value_f32);
+        }
+      }
+    }
+  };
+
+  auto loop3d = [&](int64_t begin, int64_t end) {
+    const scalar_t depth_scale = area_pixel_compute_scale<scalar_t>(
+        input_depth, output_depth, align_corners, scales[0]);
+    const scalar_t height_scale = area_pixel_compute_scale<scalar_t>(
+        input_height, output_height, align_corners, scales[1]);
+    const scalar_t width_scale = area_pixel_compute_scale<scalar_t>(
+        input_width, output_width, align_corners, scales[2]);
+
+    auto input_indexr = [=](int64_t c, int64_t d, int64_t h, int64_t w) {
+      return input_data[c * input_depth * input_height * input_width +
+          d * input_height * input_width + h * input_width + w];
+    };
+
+    int64_t id0, id1, ih0, ih1, iw0, iw1;
+    scalar_t d0lambda, d1lambda, h0lambda, h1lambda, w0lambda, w1lambda;
+    for (int64_t c = begin; c < end; c++) {
+      for (int64_t od = 0; od < output_depth; od++) {
+        compute_source_index_and_lambda(
+            id0, id1, d0lambda, d1lambda, depth_scale, od, input_depth, output_depth, align_corners);
+        for (int64_t oh = 0; oh < output_height; oh++) {
+          compute_source_index_and_lambda(
+              ih0, ih1, h0lambda, h1lambda, height_scale, oh, input_height, output_height, align_corners);
+          for (int64_t ow = 0; ow < output_width; ow++) {
+            compute_source_index_and_lambda(
+                iw0, iw1, w0lambda, w1lambda, width_scale, ow, input_width, output_width, align_corners);
+            int64_t output_offset = c * output_slice_size +
+                od * output_height * output_width + oh * output_width + ow;
+            output_data[output_offset] =
+                d0lambda * h0lambda * w0lambda * input_indexr(c, id0, ih0, iw0) + /* d0 * h0 * w0 * i000 */
+                d0lambda * h0lambda * w1lambda * input_indexr(c, id0, ih0, iw1) + /* d0 * h0 * w1 * i001 */
+                d0lambda * h1lambda * w0lambda * input_indexr(c, id0, ih1, iw0) + /* d0 * h1 * w0 * i010 */
+                d0lambda * h1lambda * w1lambda * input_indexr(c, id0, ih1, iw1) + /* d0 * h1 * w1 * i011 */
+                d1lambda * h0lambda * w0lambda * input_indexr(c, id1, ih0, iw0) + /* d1 * h0 * w0 * i100 */
+                d1lambda * h0lambda * w1lambda * input_indexr(c, id1, ih0, iw1) + /* d1 * h0 * w1 * i101 */
+                d1lambda * h1lambda * w0lambda * input_indexr(c, id1, ih1, iw0) + /* d1 * h1 * w0 * i110 */
+                d1lambda * h1lambda * w1lambda * input_indexr(c, id1, ih1, iw1);  /* d1 * h1 * w1 * i111 */
+          }
+        }
+      }
+    }
+  };
+
+  // compared to "nearest" mode, lower the grain size:
+  // "linear", "bilinear", "trilinear" mode are more computational expensive
+  if (ndim == 3) {
+    // upsample linear 1d
+    at::parallel_for(0, channels, at::internal::GRAIN_SIZE / output_slice_size / 2, loop1d);
+  } else if (ndim == 4){
+    // upsample bilinear 2d
+    at::parallel_for(0, channels, at::internal::GRAIN_SIZE / output_slice_size / 4, loop2d);
+  } else {
+    // upsample trilinear 3d
+    TORCH_INTERNAL_ASSERT(ndim == 5);
+    at::parallel_for(0, channels, at::internal::GRAIN_SIZE / output_slice_size / 8, loop3d);
+  }
+
+  if (!output_.is_contiguous()) {
+    output_.copy_(output);
+  }
+}
+
+template <typename scalar_t, typename scale_type>
 void cpu_upsample_linear_channels_last(
     Tensor& output_,
     const Tensor& input_,
@@ -506,9 +661,16 @@ void upsample_bilinear2d_kernel_impl(
       cpu_upsample_linear_channels_last<scalar_t, scale_t>(output, input, align_corners, {scales_h, scales_w});
     });
   } else {
-    AT_DISPATCH_FLOATING_TYPES(input.scalar_type(), "upsample_bilinear2d", [&] {
-      cpu_upsample_linear<scalar_t, scale_t>(output, input, align_corners, {scales_h, scales_w});
-    });
+    auto input_dtype = input.scalar_type();
+    if (isIntegralType(input_dtype, /*includeBool=*/ false)) {
+      AT_DISPATCH_INTEGRAL_TYPES(input_dtype, "upsample_bilinear2d", [&] {
+        cpu_upsample_linear_integral<scalar_t, scale_t>(output, input, align_corners, {scales_h, scales_w});
+      });
+    } else {
+      AT_DISPATCH_FLOATING_TYPES(input.scalar_type(), "upsample_bilinear2d", [&] {
+        cpu_upsample_linear<scalar_t, scale_t>(output, input, align_corners, {scales_h, scales_w});
+      });
+    }
   }
 }
 
