@@ -1391,29 +1391,28 @@ static void apply_schur(Tensor& schur_form, Tensor& schur_vectors,
   auto* wr_data = at::empty({lda}, schur_form.options()).data_ptr<scalar_t>();
   auto* wi_data = at::empty({lda}, schur_form.options()).data_ptr<scalar_t>();
   auto ldvs = lda;
-  auto* work_data = at::empty({3 * lda}, schur_form.options()).data_ptr<scalar_t>();
-  auto lwork = 3 * lda;
   auto* rwork_data = at::empty({lda}, c10::toValueType(schur_form.scalar_type()))
     .data_ptr<value_t>();
-  auto bwork = at::empty({lda}, at::kInt).data_ptr<int>();
-  int info;
+  auto bwork_data = at::empty({lda}, at::kInt).data_ptr<int>();
+  int info = 0;
 
   // Run once, first to get the optimum work size.
   // Since we deal with batches of matrices with the same dimensions, doing this outside
   // the loop saves (batch_size - 1) workspace queries which would provide the same result
   // and (batch_size - 1) calls to allocate and deallocate workspace using at::empty()
- // lwork = -1;
- // scalar_t wkopt;
- // lapackGees<scalar_t>(jobvs, sort, select, n,
- //     schur_form_data, lda, &sdim, wr_data, wi_data,
- //     schur_vectors_data, ldvs, &wkopt, lwork,
- //     rwork_data, bwork, &info);
- // std::cout << "lwork: " << wkopt << std::endl;
- // std::cout << "lda: " << lda << std::endl;
+  int lwork = -1;
+  scalar_t wkopt;
+  lapackGees<scalar_t>(jobvs, sort, select, n,
+      schur_form_data, lda, &sdim, wr_data, wi_data,
+      schur_vectors_data, ldvs, &wkopt, lwork,
+      rwork_data, bwork_data, &info);
+  lwork = static_cast<int>(real_impl<scalar_t, value_t>(wkopt));
+  auto* work_data = at::empty({lwork}, schur_form.options()).data_ptr<scalar_t>();
+
   lapackGees<scalar_t>(jobvs, sort, select, n,
       schur_form_data, lda, &sdim, wr_data, wi_data,
       schur_vectors_data, ldvs, work_data, lwork,
-      rwork_data, bwork, &info);
+      rwork_data, bwork_data, &info);
 //extern "C" void sgees_(char *jobvs, char *sort, LAPACK_S_SELECT2 select, int *n,
 //    float *a, int *lda, int *sdim, float *wr, float *wi, float *vs, int *ldvs,
 //    float *work, int *lwork, int *bwork, int *info);
