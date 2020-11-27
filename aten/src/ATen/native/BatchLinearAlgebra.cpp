@@ -1379,7 +1379,7 @@ static void apply_schur(Tensor& schur_form, Tensor& schur_vectors,
   auto* schur_vectors_data = schur_vectors.data_ptr<scalar_t>();
   auto schur_form_matrix_stride = matrixStride(schur_form);
   auto schur_vectors_matrix_stride = matrixStride(schur_vectors);
-  auto batchsize = batchCount(schur_form);
+  auto batch_size = batchCount(schur_form);
 
   // init parameters for the LAPACK (?gees) routine
   char jobvs = 'V';
@@ -1388,12 +1388,15 @@ static void apply_schur(Tensor& schur_form, Tensor& schur_vectors,
   auto n = schur_form.size(-1);
   auto lda = std::max(static_cast<int64_t>(1), n);
   int sdim = 0;
-  auto* wr_data = at::empty({lda}, schur_form.options()).data_ptr<scalar_t>();
-  auto* wi_data = at::empty({lda}, schur_form.options()).data_ptr<scalar_t>();
+  auto wr = at::empty({lda}, schur_form.options());
+  auto* wr_data = wr.data_ptr<scalar_t>();
+  auto wi = at::empty({lda}, schur_form.options());
+  auto* wi_data = wi.data_ptr<scalar_t>();
   auto ldvs = lda;
-  auto* rwork_data = at::empty({lda}, c10::toValueType(schur_form.scalar_type()))
-    .data_ptr<value_t>();
-  auto bwork_data = at::empty({lda}, at::kInt).data_ptr<int>();
+  auto rwork = at::empty({lda}, c10::toValueType(schur_form.scalar_type()));
+  auto* rwork_data = rwork.data_ptr<value_t>();
+  auto bwork = at::empty({lda}, at::kInt);
+  auto* bwork_data = bwork.data_ptr<int>();
   int info = 0;
 
   // Run once, first to get the optimum work size.
@@ -1407,7 +1410,8 @@ static void apply_schur(Tensor& schur_form, Tensor& schur_vectors,
       schur_vectors_data, ldvs, &wkopt, lwork,
       rwork_data, bwork_data, &info);
   lwork = static_cast<int>(real_impl<scalar_t, value_t>(wkopt));
-  auto* work_data = at::empty({lwork}, schur_form.options()).data_ptr<scalar_t>();
+  auto work = at::empty({lwork}, schur_form.options());
+  auto* work_data = work.data_ptr<scalar_t>();
 
   lapackGees<scalar_t>(jobvs, sort, select, n,
       schur_form_data, lda, &sdim, wr_data, wi_data,
