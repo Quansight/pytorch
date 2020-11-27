@@ -95,20 +95,51 @@ extern "C" void dgetrs_(char *trans, int *n, int *nrhs, double *a, int *lda, int
 extern "C" void sgetrs_(char *trans, int *n, int *nrhs, float *a, int *lda, int *ipiv, float *b, int *ldb, int *info);
 
 // gees
-typedef int (*LAPACK_Z_SELECT1) (const std::complex<double>*);
-typedef int (*LAPACK_C_SELECT1) (const std::complex<float>*);
-typedef int (*LAPACK_D_SELECT2) (const double*, const double*);
-typedef int (*LAPACK_S_SELECT2) (const float*, const float*);
-extern "C" void zgees_(char *jobvs, char *sort, LAPACK_Z_SELECT1 select, int *n,
+template <class scalar_t>
+struct lapack_select {
+  using type = int(*)(scalar_t*...);
+};
+
+template<>
+struct lapack_select<c10::complex<double>> {
+  using type = int(*)(const std::complex<double>*);
+};
+
+template<>
+struct lapack_select<std::complex<double>> {
+  using type = int(*)(const std::complex<double>*);
+};
+
+template<>
+struct lapack_select<c10::complex<float>> {
+  using type = int(*)(const std::complex<float>*);
+};
+
+template<>
+struct lapack_select<std::complex<float>> {
+  using type = int(*)(const std::complex<float>*);
+};
+
+template<>
+struct lapack_select<double> {
+  using type = int(*)(const double*, const double*);
+};
+
+template<>
+struct lapack_select<float> {
+  using type = int(*)(const float*, const float*);
+};
+
+extern "C" void zgees_(char *jobvs, char *sort, lapack_select<std::complex<double>>::type select, int *n,
     std::complex<double> *a, int *lda, int *sdim, std::complex<double> *w, std::complex<double> *vs, int *ldvs,
     std::complex<double> *work, int *lwork, double *rwork, int *bwork, int *info);
-extern "C" void cgees_(char *jobvs, char *sort, LAPACK_C_SELECT1 select, int *n,
+extern "C" void cgees_(char *jobvs, char *sort, lapack_select<std::complex<float>>::type select, int *n,
     std::complex<float> *a, int *lda, int *sdim, std::complex<float> *w, std::complex<float> *vs, int *ldvs,
     std::complex<float> *work, int *lwork, float *rwork, int *bwork, int *info);
-extern "C" void dgees_(char *jobvs, char *sort, LAPACK_D_SELECT2 select, int *n,
+extern "C" void dgees_(char *jobvs, char *sort, lapack_select<double>::type select, int *n,
     double *a, int *lda, int *sdim, double *wr, double *wi, double *vs, int *ldvs,
     double *work, int *lwork, int *bwork, int *info);
-extern "C" void sgees_(char *jobvs, char *sort, LAPACK_S_SELECT2 select, int *n,
+extern "C" void sgees_(char *jobvs, char *sort, lapack_select<float>::type select, int *n,
     float *a, int *lda, int *sdim, float *wr, float *wi, float *vs, int *ldvs,
     float *work, int *lwork, int *bwork, int *info);
 #endif
@@ -156,8 +187,8 @@ void lapackSvd(char jobz, int m, int n, scalar_t *a, int lda,
 template<class scalar_t>
 void lapackLuSolve(char trans, int n, int nrhs, scalar_t *a, int lda, int *ipiv, scalar_t *b, int ldb, int *info);
 
-template<class scalar_t, typename func_t>
-void lapackGees(char jobvs, char sort, func_t select, int n,
+template<class scalar_t>
+void lapackGees(char jobvs, char sort, typename lapack_select<scalar_t>::type select, int n,
     scalar_t *a, int lda, int *sdim, scalar_t *wr, scalar_t *wi, scalar_t *vs, int ldvs,
     scalar_t *work, int lwork, typename c10::scalar_value_type<scalar_t>::type *rwork, int bwork, int *info);
 
@@ -366,7 +397,7 @@ template<> void lapackLuSolve<float>(char trans, int n, int nrhs, float *a, int 
   sgetrs_(&trans, &n, &nrhs, a, &lda, ipiv, b, &ldb, info);
 }
 
-template<> void lapackGees<c10::complex<double>>(char jobvs, char sort, LAPACK_Z_SELECT1 select, int n,
+template<> void lapackGees<c10::complex<double>>(char jobvs, char sort, lapack_select<c10::complex<double>>::type select, int n,
     c10::complex<double> *a, int lda, int *sdim, c10::complex<double> *wr, c10::complex<double> *wi,
     c10::complex<double> *vs, int ldvs, c10::complex<double> *work, int lwork, double *rwork, int bwork, int *info) {
   zgees_(&jobvs, &sort, select, &n,
@@ -377,7 +408,7 @@ template<> void lapackGees<c10::complex<double>>(char jobvs, char sort, LAPACK_Z
       rwork, &bwork, info);
 }
 
-template<> void lapackGees<c10::complex<float>>(char jobvs, char sort, LAPACK_C_SELECT1 select, int n,
+template<> void lapackGees<c10::complex<float>>(char jobvs, char sort, lapack_select<c10::complex<float>>::type select, int n,
     c10::complex<float> *a, int lda, int *sdim, c10::complex<float> *wr, c10::complex<float> *wi,
     c10::complex<float> *vs, int ldvs, c10::complex<float> *work, int lwork, float *rwork, int bwork, int *info) {
   cgees_(&jobvs, &sort, select, &n,
@@ -388,7 +419,7 @@ template<> void lapackGees<c10::complex<float>>(char jobvs, char sort, LAPACK_C_
       rwork, &bwork, info);
 }
 
-template<> void lapackGees<double>(char jobvs, char sort, LAPACK_D_SELECT2 select, int n,
+template<> void lapackGees<double>(char jobvs, char sort, lapack_select<double>::type select, int n,
     double *a, int lda, int *sdim, double *wr, double *wi,
     double *vs, int ldvs, double *work, int lwork, double *rwork, int bwork, int *info) {
   dgees_(&jobvs, &sort, select, &n,
@@ -396,7 +427,7 @@ template<> void lapackGees<double>(char jobvs, char sort, LAPACK_D_SELECT2 selec
       work, &lwork, &bwork, info);
 }
 
-template<> void lapackGees<float>(char jobvs, char sort, LAPACK_S_SELECT2 select, int n,
+template<> void lapackGees<float>(char jobvs, char sort, lapack_select<float>::type select, int n,
     float *a, int lda, int *sdim, float *wr, float *wi,
     float *vs, int ldvs, float *work, int lwork, float *rwork, int bwork, int *info) {
   sgees_(&jobvs, &sort, select, &n,
@@ -1338,36 +1369,54 @@ std::tuple<Tensor&, Tensor&, Tensor&> svd_out(Tensor& U, Tensor& S, Tensor& VT,
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ schur ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 template <typename scalar_t>
-static void apply_schur(Tensor& self, Tensor& schur_vectors,
+static void apply_schur(Tensor& schur_form, Tensor& schur_vectors,
     std::vector<int64_t>& infos) {
 #ifndef USE_LAPACK
   AT_ERROR("schur: LAPACK library not found in compilation");
 #else
-  //using value_t = typename c10::scalar_value_type<scalar_t>::type;
-  //auto self_data = self.data_ptr<scalar_t>();
-  //auto U_data = U.data_ptr<scalar_t>();
-  //auto S_data = S.data_ptr<value_t>();
-  //auto VT_data = VT.data_ptr<scalar_t>();
-  //auto self_stride = matrixStride(self);
-  //auto U_stride = matrixStride(U);
-  //auto S_stride = S.size(-1);
-  //auto VT_stride = matrixStride(VT);
-  //auto batchsize = batchCount(self);
+  using value_t = typename c10::scalar_value_type<scalar_t>::type;
+  auto* schur_form_data = schur_form.data_ptr<scalar_t>();
+  auto* schur_vectors_data = schur_vectors.data_ptr<scalar_t>();
+  auto schur_form_matrix_stride = matrixStride(schur_form);
+  auto schur_vectors_matrix_stride = matrixStride(schur_vectors);
+  auto batchsize = batchCount(schur_form);
 
-  //int info;
-  //auto m = self.size(-2);
-  //auto n = self.size(-1);
-  //auto mn = std::min(m, n);
-  //Tensor iwork = at::empty({8 * mn}, at::kInt);
-  //auto iwork_data = iwork.data_ptr<int>();
-  //Tensor rwork;
-  //value_t* rwork_data = nullptr;
-  //if (isComplexType(at::typeMetaToScalarType(self.dtype()))) {
-  //  auto lrwork  = computeLRWorkDim(jobz, m, n);
-  //  // rwork is an array of floats or doubles depending on the type
-  //  rwork = at::empty({std::max(int64_t(1), lrwork)}, at::typeMetaToScalarType(S.dtype()));
-  //  rwork_data = rwork.data_ptr<value_t>();
-  //}
+  // init parameters for the LAPACK (?gees) routine
+  char jobvs = 'V';
+  char sort = 'N';
+  typename lapack_select<scalar_t>::type select = nullptr;
+  auto n = schur_form.size(-1);
+  auto lda = std::max(static_cast<int64_t>(1), n);
+  int sdim;
+  auto w = at::empty({2, lda}, schur_form.options());
+  auto* wr_data = w.select(0, 0).data_ptr<scalar_t>();
+  auto* wi_data = w.select(0, 1).data_ptr<scalar_t>();
+  auto ldvs = lda;
+  auto* work_data = at::empty({3 * lda}, schur_form.options()).data_ptr<scalar_t>();
+  auto lwork = 3 * lda;
+  auto* rwork_data = at::empty({lda},
+      schur_form.options().dtype(c10::toValueType(schur_form.scalar_type()))
+      ).data_ptr<value_t>();
+  auto bwork = lda;
+  int info;
+
+  // Run once, first to get the optimum work size.
+  // Since we deal with batches of matrices with the same dimensions, doing this outside
+  // the loop saves (batch_size - 1) workspace queries which would provide the same result
+  // and (batch_size - 1) calls to allocate and deallocate workspace using at::empty()
+  //lwork = -1;
+  //scalar_t wkopt;
+  lapackGees<scalar_t>(jobvs, sort, select, n,
+      schur_form_data, lda, &sdim, wr_data, wi_data,
+      schur_vectors_data, ldvs, work_data, lwork,
+      rwork_data, bwork, &info);
+//extern "C" void sgees_(char *jobvs, char *sort, LAPACK_S_SELECT2 select, int *n,
+//    float *a, int *lda, int *sdim, float *wr, float *wi, float *vs, int *ldvs,
+//    float *work, int *lwork, int *bwork, int *info);
+
+  //sgees_(&jobvs, &sort, nullptr, &n, schur_form_data, &lda, &sdim, wr_data, wi_data,
+  //    schur_vectors_data, &ldvs, work_data, &lwork, &bwork, &info);
+
 
   //// Run once, first to get the optimum work size.
   //// Since we deal with batches of matrices with the same dimensions, doing this outside
