@@ -1387,7 +1387,7 @@ static void apply_schur(Tensor& schur_form, Tensor& schur_vectors,
   typename lapack_select<scalar_t>::type select = nullptr;
   auto n = schur_form.size(-1);
   auto lda = std::max(static_cast<int64_t>(1), n);
-  int sdim;
+  int sdim = 0;
   auto* wr_data = at::empty({lda}, schur_form.options()).data_ptr<scalar_t>();
   auto* wi_data = at::empty({lda}, schur_form.options()).data_ptr<scalar_t>();
   auto ldvs = lda;
