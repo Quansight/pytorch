@@ -190,7 +190,7 @@ void lapackLuSolve(char trans, int n, int nrhs, scalar_t *a, int lda, int *ipiv,
 template<class scalar_t>
 void lapackGees(char jobvs, char sort, typename lapack_select<scalar_t>::type select, int n,
     scalar_t *a, int lda, int *sdim, scalar_t *wr, scalar_t *wi, scalar_t *vs, int ldvs,
-    scalar_t *work, int lwork, typename c10::scalar_value_type<scalar_t>::type *rwork, int bwork, int *info);
+    scalar_t *work, int lwork, typename c10::scalar_value_type<scalar_t>::type *rwork, int *bwork, int *info);
 
 
 template<> void lapackSolve<c10::complex<double>>(int n, int nrhs, c10::complex<double> *a, int lda, int *ipiv, c10::complex<double> *b, int ldb, int *info) {
@@ -399,40 +399,40 @@ template<> void lapackLuSolve<float>(char trans, int n, int nrhs, float *a, int 
 
 template<> void lapackGees<c10::complex<double>>(char jobvs, char sort, lapack_select<c10::complex<double>>::type select, int n,
     c10::complex<double> *a, int lda, int *sdim, c10::complex<double> *wr, c10::complex<double> *wi,
-    c10::complex<double> *vs, int ldvs, c10::complex<double> *work, int lwork, double *rwork, int bwork, int *info) {
+    c10::complex<double> *vs, int ldvs, c10::complex<double> *work, int lwork, double *rwork, int *bwork, int *info) {
   zgees_(&jobvs, &sort, select, &n,
       reinterpret_cast<std::complex<double>*>(a), &lda, sdim,
       /*w=*/reinterpret_cast<std::complex<double>*>(wr),
       reinterpret_cast<std::complex<double>*>(vs), &ldvs,
       reinterpret_cast<std::complex<double>*>(work), &lwork,
-      rwork, &bwork, info);
+      rwork, bwork, info);
 }
 
 template<> void lapackGees<c10::complex<float>>(char jobvs, char sort, lapack_select<c10::complex<float>>::type select, int n,
     c10::complex<float> *a, int lda, int *sdim, c10::complex<float> *wr, c10::complex<float> *wi,
-    c10::complex<float> *vs, int ldvs, c10::complex<float> *work, int lwork, float *rwork, int bwork, int *info) {
+    c10::complex<float> *vs, int ldvs, c10::complex<float> *work, int lwork, float *rwork, int *bwork, int *info) {
   cgees_(&jobvs, &sort, select, &n,
       reinterpret_cast<std::complex<float>*>(a), &lda, sdim,
       /*w=*/reinterpret_cast<std::complex<float>*>(wr),
       reinterpret_cast<std::complex<float>*>(vs), &ldvs,
       reinterpret_cast<std::complex<float>*>(work), &lwork,
-      rwork, &bwork, info);
+      rwork, bwork, info);
 }
 
 template<> void lapackGees<double>(char jobvs, char sort, lapack_select<double>::type select, int n,
     double *a, int lda, int *sdim, double *wr, double *wi,
-    double *vs, int ldvs, double *work, int lwork, double *rwork, int bwork, int *info) {
+    double *vs, int ldvs, double *work, int lwork, double *rwork, int *bwork, int *info) {
   dgees_(&jobvs, &sort, select, &n,
       a, &lda, sdim, wr, wi, vs, &ldvs,
-      work, &lwork, &bwork, info);
+      work, &lwork, bwork, info);
 }
 
 template<> void lapackGees<float>(char jobvs, char sort, lapack_select<float>::type select, int n,
     float *a, int lda, int *sdim, float *wr, float *wi,
-    float *vs, int ldvs, float *work, int lwork, float *rwork, int bwork, int *info) {
+    float *vs, int ldvs, float *work, int lwork, float *rwork, int *bwork, int *info) {
   sgees_(&jobvs, &sort, select, &n,
       a, &lda, sdim, wr, wi, vs, &ldvs,
-      work, &lwork, &bwork, info);
+      work, &lwork, bwork, info);
 }
 
 #endif
@@ -1388,16 +1388,15 @@ static void apply_schur(Tensor& schur_form, Tensor& schur_vectors,
   auto n = schur_form.size(-1);
   auto lda = std::max(static_cast<int64_t>(1), n);
   int sdim;
-  auto w = at::empty({2, lda}, schur_form.options());
-  auto* wr_data = w.select(0, 0).data_ptr<scalar_t>();
-  auto* wi_data = w.select(0, 1).data_ptr<scalar_t>();
+  auto* wr_data = at::empty({lda}, schur_form.options()).data_ptr<scalar_t>();
+  auto* wi_data = at::empty({lda}, schur_form.options()).data_ptr<scalar_t>();
   auto ldvs = lda;
   auto* work_data = at::empty({3 * lda}, schur_form.options()).data_ptr<scalar_t>();
   auto lwork = 3 * lda;
   auto* rwork_data = at::empty({lda},
       schur_form.options().dtype(c10::toValueType(schur_form.scalar_type()))
       ).data_ptr<value_t>();
-  auto bwork = lda;
+  auto bwork = at::empty({lda}, schur_form.options().dtype(at::kInt)).data_ptr<int>();
   int info;
 
   // Run once, first to get the optimum work size.
