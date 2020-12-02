@@ -203,7 +203,7 @@ class BenchmarkRunner(object):
         if self.args.ai_pep_format:
             # Output for AI-PEP
             # Print out per iteration execution time instead of avg time
-            return
+            # return
             test_name = '_'.join([test_case.framework, test_case.test_config.test_name])
             for run in range(self.num_runs):
                 print("{}Observer ".format(test_case.framework) + json.dumps(
@@ -212,6 +212,8 @@ class BenchmarkRunner(object):
                         "metric": "latency",
                         "unit": "us",
                         "value": str(reported_run_time_us[run]),
+                        "config": test_case.test_config.input_config,
+                        "average": True
                     }
                 ))
         else:
@@ -297,6 +299,8 @@ class BenchmarkRunner(object):
                         "metric": "latency",
                         "unit": "ms",
                         "value": str(report_run_time / 1e3),
+                        "config": test_case.test_config.input_config,
+                        "average": False
                     }
                 ))
             if results_are_significant:
