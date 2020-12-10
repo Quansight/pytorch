@@ -165,6 +165,8 @@ class OpInfo(object):
                  supports_sparse=False,  # supported for sparse
                  check_batched_grad=True,  # check batched grad when doing gradcheck
                  check_batched_gradgrad=True,  # check batched grad grad when doing gradgradcheck
+                 is_linear_map=False,  # whether the op is a linear map, f(a + b) = f(a) + f(b), f(c * a) = c * f(a)
+                 sample_inputs_func_sparse=None,  # function to generate sample inputs for sparse tensors
                  ):
 
         # Validates the dtypes are generated from the dispatch-related functions
@@ -213,6 +215,8 @@ class OpInfo(object):
         self.aliases = ()  # type: ignore
         if aliases is not None:
             self.aliases = tuple(AliasInfo(a) for a in aliases)  # type: ignore
+        self.is_linear_map = is_linear_map
+        self.sample_inputs_func_sparse = sample_inputs_func_sparse
 
     def __call__(self, *args, **kwargs):
         """Calls the function variant of the operator."""
@@ -247,6 +251,14 @@ class OpInfo(object):
         with autograd, TorchScript, etc.
         """
         return self.sample_inputs_func(self, device, dtype, requires_grad)
+
+    def sample_sparse_inputs(self, device, dtype, requires_grad=False):
+        """Returns an iterable of Sparse SampleInputs.
+
+        These samples should be sufficient to test the function works correctly
+        with autograd, TorchScript, etc for Sparse Inputs.
+        """
+        return self.sample_inputs_func_sparse(self, device, dtype, requires_grad)
 
     # Returns True if the test should be skipped and False otherwise
     def should_skip(self, cls_name, test_name, device_type, dtype):
@@ -293,6 +305,59 @@ def sample_inputs_unary(op_info, device, dtype, requires_grad):
                                     low=low, high=high,
                                     requires_grad=requires_grad)))
 
+def sample_sparse_inputs_unaryop(op_info, device, dtype, requires_grad=False):
+    """Returns an iterable of SampleInputs."""
+    """Todo - Make this method more generic similar to make_tensor method
+        Currently it supports some basic Sparse Tensors"""
+
+    if not op_info.supports_sparse:
+        raise RuntimeError("Sparse layout not supported for ", op_info.name)
+
+    low, high = op_info.domain
+    low = low if low is None else low + op_info._domain_eps
+    high = high if high is None else high - op_info._domain_eps
+
+    # empty tensor
+    empty_tensor = torch.sparse_coo_tensor(torch.empty([1, 0]), torch.empty([0, 2]), [1, 2],
+                                           device=device, dtype=dtype)
+    empty_tensor_coal = empty_tensor.coalesce()
+
+    # 1D Tensor
+    i = torch.tensor([[0, 1, 10], ], device=device)
+    v = make_tensor((3,), device, dtype,
+                    low=low, high=high, requires_grad=requires_grad)
+    one_d_tensor = torch.sparse_coo_tensor(i, v, [15, ])
+    one_d_tensor_coal = one_d_tensor.coalesce()
+
+
+    # 2D Tensor
+    i = torch.tensor([[0, 1, 1],
+                      [2, 0, 2]], device=device)
+    v = make_tensor((3,), device, dtype,
+                    low=low, high=high, requires_grad=requires_grad)
+    two_d_tensor = torch.sparse_coo_tensor(i, v, [2, 4])
+    two_d_tensor_coal = two_d_tensor.coalesce()
+
+    # 3D Tensor
+    i = torch.tensor([[0, 1, 1],
+                      [2, 0, 2],
+                      [0, 3, 5]], device=device)
+    v = make_tensor((3,), device, dtype,
+                    low=low, high=high, requires_grad=requires_grad)
+    three_d_tensor = torch.sparse_coo_tensor(i, v, [2, 4, 7])
+    three_d_tensor_coal = three_d_tensor.coalesce()
+
+    return (
+        SampleInput(empty_tensor),
+        SampleInput(empty_tensor_coal),
+        SampleInput(one_d_tensor),
+        SampleInput(one_d_tensor_coal),
+        SampleInput(two_d_tensor),
+        SampleInput(two_d_tensor_coal),
+        SampleInput(three_d_tensor),
+        SampleInput(three_d_tensor_coal),
+    )
+
 # Metadata class for unary "universal functions (ufuncs)" that accept a single
 # tensor and have common properties like:
 class UnaryUfuncInfo(OpInfo):
@@ -323,6 +388,8 @@ class UnaryUfuncInfo(OpInfo):
                  supports_complex_to_float=False,  # op supports casting from complex input to real output safely eg. angle
                  sample_inputs_func=sample_inputs_unary,
                  supports_sparse=False,
+                 is_linear_map=False,
+                 sample_inputs_func_sparse=sample_sparse_inputs_unaryop,
                  **kwargs):
         super(UnaryUfuncInfo, self).__init__(name,
                                              dtypes=dtypes,
@@ -331,6 +398,8 @@ class UnaryUfuncInfo(OpInfo):
                                              dtypesIfROCM=dtypesIfROCM,
                                              sample_inputs_func=sample_inputs_func,
                                              supports_sparse=supports_sparse,
+                                             is_linear_map=is_linear_map,
+                                             sample_inputs_func_sparse=sample_inputs_func_sparse,
                                              **kwargs)
         self.ref = ref
         self.domain = domain
@@ -1401,6 +1470,7 @@ op_db: List[OpInfo] = [
     UnaryUfuncInfo('asinh',
                    aliases=('arcsinh', ),
                    ref=np.arcsinh,
+                   supports_sparse=True,
                    dtypes=all_types_and_complex_and(torch.bool),
                    dtypesIfCPU=all_types_and_complex_and(torch.bool),
                    dtypesIfCUDA=all_types_and_complex_and(torch.bool, torch.half, torch.bfloat16),

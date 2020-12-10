@@ -434,6 +434,8 @@ tensors <sparse-coo-docs>`:
 :meth:`~torch.Tensor.any`
 :meth:`~torch.Tensor.asin`
 :meth:`~torch.Tensor.asin_`
+:meth:`~torch.Tensor.asinh`
+:meth:`~torch.Tensor.asinh_`
 :meth:`~torch.Tensor.arcsin`
 :meth:`~torch.Tensor.arcsin_`
 :meth:`~torch.Tensor.bmm`
@@ -468,6 +470,7 @@ tensors <sparse-coo-docs>`:
 :meth:`~torch.Tensor.size`
 :meth:`~torch.Tensor.pow`
 :meth:`~torch.Tensor.sqrt`
+:meth:`~torch.Tensor.sqrt_`
 :meth:`~torch.Tensor.square`
 :meth:`~torch.Tensor.smm`
 :meth:`~torch.Tensor.sspaddmm`

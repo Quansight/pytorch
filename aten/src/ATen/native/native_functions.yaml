@@ -532,17 +532,20 @@
 - func: asinh(Tensor self) -> Tensor
   variants: function, method
   dispatch:
-    DefaultBackend: asinh
+    CPU, CUDA: asinh
+    SparseCPU, SparseCUDA: asinh_sparse
 
 - func: asinh_(Tensor(a!) self) -> Tensor(a!)
   variants: function, method
   dispatch:
-    DefaultBackend: asinh_
+    CPU, CUDA: asinh_
+    SparseCPU, SparseCUDA: asinh_sparse_
 
 - func: asinh.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)
   use_c10_dispatcher: hacky_wrapper_for_legacy_signatures
   dispatch:
     CPU, CUDA: asinh_out
+    SparseCPU, SparseCUDA: asinh_out_sparse
 
 # arcsinh, alias for asinh
 - func: arcsinh(Tensor self) -> Tensor
@@ -3681,6 +3684,7 @@
   variants: function, method
   dispatch:
     CPU, CUDA: sqrt_
+    SparseCPU, SparseCUDA: sqrt_sparse_
 
 - func: sqrt.out(Tensor self, *, Tensor(a!) out) -> Tensor(a!)
   use_c10_dispatcher: hacky_wrapper_for_legacy_signatures
