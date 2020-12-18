@@ -4,6 +4,8 @@ import torch
 """Microbenchmarks for the interpolate op.
 
 python -m pt.interpolate_test --ai_pep_format --tag_filter=all > bench_interpolate.log
+# To produce a CSV table
+python to_csv.py bench_interpolate.log bench_interpolate.csv
 
 1) upsample_bilinear2d_cpu to support uint8
   - downsampling in/out sizes: 300,400,500 -> 256, 1024 -> 512, 128 -> 32
