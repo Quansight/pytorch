@@ -192,6 +192,9 @@ Tensor upsample_trilinear3d_backward_cpu(
 DEFINE_DISPATCH(upsample_trilinear3d_kernel);
 DEFINE_DISPATCH(upsample_trilinear3d_backward_kernel);
 
+// #define NO_DISPATCH
+#ifdef NO_DISPATCH
+
 namespace {
 
 template<typename scalar_t, typename index_t>
@@ -496,6 +499,8 @@ void ti_upsample_trilinear3d_kernel_impl(
 REGISTER_ARCH_DISPATCH(upsample_trilinear3d_kernel, DEFAULT, &upsample_trilinear3d_kernel_impl);
 REGISTER_AVX_DISPATCH(upsample_trilinear3d_kernel, &upsample_trilinear3d_kernel_impl);
 REGISTER_AVX2_DISPATCH(upsample_trilinear3d_kernel, &upsample_trilinear3d_kernel_impl);
+
+#endif
 
 } // namespace native
 } // namespace at
