@@ -2711,6 +2711,7 @@ if TEST_SCIPY:
                        ),
         UnaryUfuncInfo('lgamma',
                        ref=reference_lgamma,
+                       aliases=('special.gammaln', ),
                        decorators=(precisionOverride({torch.float16: 7e-1}),),
                        dtypes=all_types_and(torch.bool),
                        dtypesIfCPU=all_types_and(torch.bool, torch.bfloat16),
