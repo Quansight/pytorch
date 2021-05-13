@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstdint>
+#include <type_traits>
 #include <c10/macros/Macros.h>
 #include <ATen/core/Array.h>
 #include <ATen/native/TensorIterator.h>
@@ -28,16 +29,29 @@ struct OffsetCalculator {
 
   // if element_sizes is nullptr, then the strides will be in bytes, otherwise
   // the strides will be in # of elements.
-  OffsetCalculator(int dims, const int64_t* sizes, const int64_t* const* strides, const int64_t* element_sizes=nullptr) : dims(dims) {
-    TORCH_CHECK(dims <= MAX_DIMS, "tensor has too many (>", MAX_DIMS, ") dims");
-    for (int i=0; i < dims; i++){
-      sizes_[i] = IntDivider<index_t>(sizes[i]);
-      for (int arg = 0; arg < NARGS; arg++) {
-        int64_t element_size = (element_sizes == nullptr ? 1LL : element_sizes[arg]);
-        strides_[i][arg] = strides[arg][i] / element_size;
-      }
-    }
-  }
+  OffsetCalculator(const int dims,
+                   const int64_t* const sizes,
+                   const int64_t* const* const strides,
+                   const int64_t* const element_sizes=nullptr)
+    : dims(dims),
+      sizes_([sizes, dims] {
+              TORCH_CHECK(dims <= MAX_DIMS, "tensor has too many (>", MAX_DIMS, ") dims");
+              std::remove_const_t<decltype(sizes_)> ret;
+              for (int i=0; i < dims; i++){
+                ret[i] = IntDivider<index_t>(sizes[i]);
+               }
+               return ret;
+            }()),
+      strides_([strides, dims, element_sizes] {
+              std::remove_const_t<decltype(strides_)> ret;
+              for (int i=0; i < dims; i++){
+                for (int arg = 0; arg < NARGS; arg++) {
+                  const int64_t element_size = (element_sizes == nullptr ? 1LL : element_sizes[arg]);
+                  ret[i][arg] = strides[arg][i] / element_size;
+                }
+              }
+              return ret;
+            }()) {}
 
   C10_HOST_DEVICE offset_type get(index_t linear_idx) const {
     offset_type offsets;
@@ -63,9 +77,9 @@ struct OffsetCalculator {
     return offsets;
   }
 
-  int dims;
-  IntDivider<index_t> sizes_[MAX_DIMS];
-  index_t strides_[MAX_DIMS][std::max<int>(NARGS, 1)];
+  const int dims;
+  const at::detail::Array<IntDivider<index_t>, MAX_DIMS> sizes_;
+  const at::detail::Array<at::detail::Array<index_t, std::max<int>(NARGS, 1)>, MAX_DIMS> strides_;
 };
 
 template <int NARGS, typename index_t = uint32_t>
